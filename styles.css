@@ -1,11 +1,11 @@
 :root {
   color-scheme: light;
-  --bg: #ececec;
+  --bg: #eef2f7;
   --panel: rgba(255, 255, 255, 0.72);
   --panel-border: rgba(17, 17, 17, 0.08);
   --text: #1b1b1f;
   --muted: rgba(27, 27, 31, 0.62);
-  --accent: #ff2e93;
+  --accent: #2f6bff;
   --shadow: 0 16px 40px rgba(20, 20, 24, 0.12);
 }
 
@@ -44,6 +44,7 @@ output {
 }
 
 #scene {
+  cursor: grab;
   display: block;
   width: 100%;
   height: 100%;
@@ -128,6 +129,7 @@ output {
 }
 
 .panel-header {
+  letter-spacing: normal;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -138,8 +140,8 @@ output {
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  background: radial-gradient(circle at 30% 30%, #ffd0e7, var(--accent));
-  box-shadow: 0 0 18px rgba(255, 46, 147, 0.5);
+  background: radial-gradient(circle at 30% 30%, #bfd8ff, var(--accent));
+  box-shadow: 0 0 18px rgba(47, 107, 255, 0.3);
 }
 
 .control-row {
@@ -209,6 +211,8 @@ button.secondary {
 }
 
 .hint-pill {
+  white-space: nowrap;
+  pointer-events: none;
   position: absolute;
   left: 50%;
   bottom: 34px;

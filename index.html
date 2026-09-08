@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,78 +10,63 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Cormorant+Garamond:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=c6c3609" />
+    <link rel="stylesheet" href="./styles.css?v=blue-pinch-02" />
   </head>
   <body>
     <div class="page-shell">
-      <aside class="intro-panel">
-        <p class="eyebrow">INTERACTIVE STUDY / NO. 001</p>
+      <aside class="intro-panel" lang="en">
         <h1>Jelly<br />Lab.</h1>
-        <p class="lede">
-          A glossy soft-body object for the browser. Push it, drag it, and let it rebound.
-        </p>
-        <div class="stats">
-          <div>
-            <span class="label">Mode</span>
-            <strong>Soft body</strong>
-          </div>
-          <div>
-            <span class="label">Input</span>
-            <strong>Mouse / touch</strong>
-          </div>
-        </div>
-        <p class="microcopy">Take hold. Let go. Watch the inertia settle.</p>
       </aside>
 
       <main class="scene-panel">
         <canvas id="scene"></canvas>
-        <div class="hint-pill" id="hint">Drag the jelly</div>
+        <div class="hint-pill" id="hint">젤리를 잡아당겨 보세요</div>
       </main>
 
       <aside class="control-panel">
         <div class="panel-card">
           <div class="panel-header">
-            <p class="eyebrow">THE SPECIMEN</p>
+            <p class="eyebrow">젤리 설정</p>
             <span class="status-dot"></span>
           </div>
 
           <label class="control-row">
-            <span>Mass feel</span>
-            <input id="mass" type="range" min="0.3" max="1.8" step="0.01" value="1.0" />
-            <output id="massValue">1.00</output>
+            <span>질량감</span>
+            <input id="mass" type="range" min="0.3" max="1.8" step="0.01" value="1.25" />
+            <output id="massValue">1.25</output>
           </label>
 
           <label class="control-row">
-            <span>Firmness</span>
-            <input id="firmness" type="range" min="0.05" max="0.4" step="0.005" value="0.18" />
-            <output id="firmnessValue">0.18</output>
+            <span>탄성</span>
+            <input id="firmness" type="range" min="0.05" max="0.4" step="0.005" value="0.12" />
+            <output id="firmnessValue">0.12</output>
           </label>
 
           <label class="control-row">
-            <span>Internal damping</span>
+            <span>내부 감쇠</span>
             <input id="damping" type="range" min="0.75" max="0.98" step="0.005" value="0.9" />
             <output id="dampingValue">0.90</output>
           </label>
 
           <label class="control-row">
-            <span>Surface smoothing</span>
-            <input id="smoothing" type="range" min="0.01" max="0.14" step="0.005" value="0.05" />
-            <output id="smoothingValue">0.05</output>
+            <span>표면 매끈함</span>
+            <input id="smoothing" type="range" min="0.01" max="0.14" step="0.005" value="0.08" />
+            <output id="smoothingValue">0.08</output>
           </label>
 
           <div class="button-row">
-            <button id="nudge" type="button">Give it a nudge</button>
-            <button id="reset" type="button" class="secondary">Reset</button>
+            <button id="nudge" type="button">툭 치기</button>
+            <button id="reset" type="button" class="secondary">초기화</button>
           </div>
 
           <div class="checkbox-row">
-            <label><input id="autorotate" type="checkbox" checked /> Slow drift</label>
-            <label><input id="shadowToggle" type="checkbox" checked /> Shadow</label>
+            <label><input id="autorotate" type="checkbox" checked /> 느린 회전</label>
+            <label><input id="shadowToggle" type="checkbox" checked /> 그림자</label>
           </div>
         </div>
       </aside>
     </div>
 
-    <script type="module" src="./app.js?v=c6c3609"></script>
+    <script type="module" src="./app.js?v=blue-pinch-02"></script>
   </body>
 </html>
