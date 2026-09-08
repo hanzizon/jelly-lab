@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jelly Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Cormorant+Garamond:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <aside class="intro-panel">
+        <p class="eyebrow">INTERACTIVE STUDY / NO. 001</p>
+        <h1>Jelly<br />Lab.</h1>
+        <p class="lede">
+          A glossy soft-body object for the browser. Push it, drag it, and let it rebound.
+        </p>
+        <div class="stats">
+          <div>
+            <span class="label">Mode</span>
+            <strong>Soft body</strong>
+          </div>
+          <div>
+            <span class="label">Input</span>
+            <strong>Mouse / touch</strong>
+          </div>
+        </div>
+        <p class="microcopy">Take hold. Let go. Watch the inertia settle.</p>
+      </aside>
+
+      <main class="scene-panel">
+        <canvas id="scene"></canvas>
+        <div class="hint-pill" id="hint">Drag the jelly</div>
+      </main>
+
+      <aside class="control-panel">
+        <div class="panel-card">
+          <div class="panel-header">
+            <p class="eyebrow">THE SPECIMEN</p>
+            <span class="status-dot"></span>
+          </div>
+
+          <label class="control-row">
+            <span>Mass feel</span>
+            <input id="mass" type="range" min="0.3" max="1.8" step="0.01" value="1.0" />
+            <output id="massValue">1.00</output>
+          </label>
+
+          <label class="control-row">
+            <span>Firmness</span>
+            <input id="firmness" type="range" min="0.05" max="0.4" step="0.005" value="0.18" />
+            <output id="firmnessValue">0.18</output>
+          </label>
+
+          <label class="control-row">
+            <span>Internal damping</span>
+            <input id="damping" type="range" min="0.75" max="0.98" step="0.005" value="0.9" />
+            <output id="dampingValue">0.90</output>
+          </label>
+
+          <label class="control-row">
+            <span>Surface smoothing</span>
+            <input id="smoothing" type="range" min="0.01" max="0.14" step="0.005" value="0.05" />
+            <output id="smoothingValue">0.05</output>
+          </label>
+
+          <div class="button-row">
+            <button id="nudge" type="button">Give it a nudge</button>
+            <button id="reset" type="button" class="secondary">Reset</button>
+          </div>
+
+          <div class="checkbox-row">
+            <label><input id="autorotate" type="checkbox" checked /> Slow drift</label>
+            <label><input id="shadowToggle" type="checkbox" checked /> Shadow</label>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
