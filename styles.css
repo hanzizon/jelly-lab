@@ -224,9 +224,16 @@ button.secondary {
 }
 
 @media (max-width: 900px) {
+  .scene-panel {
+    position: relative;
+    height: max(360px, 55svh);
+  }
+
   .intro-panel {
-    top: 24px;
-    left: 20px;
+    position: relative;
+    top: auto;
+    left: auto;
+    margin: 24px 20px 0;
     max-width: 230px;
   }
 
@@ -236,9 +243,11 @@ button.secondary {
   }
 
   .control-panel {
-    left: 20px;
-    right: 20px;
-    bottom: 20px;
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    margin: 0 20px 20px;
     width: auto;
   }
 
@@ -253,7 +262,7 @@ button.secondary {
 
 @media (max-width: 620px) {
   .intro-panel {
-    position: absolute;
+    position: relative;
     max-width: calc(100vw - 32px);
   }
 
@@ -268,7 +277,7 @@ button.secondary {
   }
 
   .hint-pill {
-    bottom: 210px;
+    bottom: 12px;
   }
 
   .checkbox-row {

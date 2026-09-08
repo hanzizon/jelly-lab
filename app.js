@@ -48,6 +48,17 @@ scene.fog = new THREE.Fog(0xececec, 12, 20);
 const camera = new THREE.PerspectiveCamera(34, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 1.1, 6.6);
 
+function resizeScene() {
+  const { width, height } = canvas.parentElement.getBoundingClientRect();
+  camera.aspect = width / Math.max(height, 1);
+  const distance = 2.4 / (Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.min(camera.aspect, 1));
+  camera.position.set(0, 0.8, distance);
+  camera.lookAt(0, -0.1, 0);
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height);
+}
+resizeScene();
+
 const hemi = new THREE.HemisphereLight(0xffffff, 0xd7d7d7, 1.25);
 scene.add(hemi);
 
@@ -290,11 +301,7 @@ ui.shadowToggle.addEventListener("change", () => {
   ground.visible = ui.shadowToggle.checked;
 });
 
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+window.addEventListener("resize", resizeScene);
 
 const clock = new THREE.Clock();
 
