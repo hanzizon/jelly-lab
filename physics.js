@@ -29,7 +29,7 @@ export class Jelly {
     const u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]),w=d.map((v,k)=>v-a[k]);
     return (u[0]*(v[1]*w[2]-v[2]*w[1])+u[1]*(v[2]*w[0]-v[0]*w[2])+u[2]*(v[0]*w[1]-v[1]*w[0]))/6;
   }
-  reset(){this.p=this.rest.map(p=>[p[0],p[1]+this.floor+.59,p[2]]);this.v=this.p.map(()=>[0,0,0]);this.grab=null;}
+  reset(){this.p=this.rest.map(p=>[p[0],p[1]+this.floor+.59,p[2]]);this.v=this.p.map(()=>[0,0,0]);this.grab=null;this.renderRotation=[1,0,0,0,1,0,0,0,1];}
   skin(point, surfacePoint=point) {
     const x=point[0]/1.64,z=point[2]/1.64;
     const inv=(a,b)=>Math.sign(a)*Math.sqrt(Math.max(0,((2+a*a-b*b)-Math.sqrt(Math.max(0,(2+a*a-b*b)**2-8*a*a)))/2));
@@ -47,17 +47,26 @@ export class Jelly {
       const ix=Math.max(0,Math.min(8,base[0]+x-1)),iy=Math.max(0,Math.min(4,base[1]+y-1)),iz=Math.max(0,Math.min(8,base[2]+z-1));
       smoothIds.push((iy*9+iz)*9+ix);smoothWeights.push(w[0][x]*w[1][y]*w[2][z]);
     }
-    return {ids,weights,offset,smoothIds,smoothWeights,surfacePoint};
+    const merged=new Map();smoothIds.forEach((id,i)=>merged.set(id,(merged.get(id)||0)+smoothWeights[i]));
+    const renderIds=[],renderWeights=[];for(const [id,w] of merged)if(Math.abs(w)>1e-9){renderIds.push(id);renderWeights.push(w);}
+    const localOffset=surfacePoint.map((v,k)=>v-renderIds.reduce((sum,id,i)=>sum+this.rest[id][k]*renderWeights[i],0));
+    return {ids,weights,offset,smoothIds:renderIds,smoothWeights:renderWeights,surfacePoint,localOffset};
   }
   sample(s){return s.offset.map((v,k)=>v+s.ids.reduce((sum,id,i)=>sum+this.p[id][k]*s.weights[i],0));}
+  prepareRender(){if(!this.grab)this.renderRotation=this.frame().rotation;}
   renderSample(s,out){
-    for(let k=0;k<3;k++){let v=s.surfacePoint[k];for(let i=0;i<s.smoothIds.length;i++){const id=s.smoothIds[i];v+=(this.p[id][k]-this.rest[id][k])*s.smoothWeights[i];}out[k]=v;}return out;
+    const r=this.renderRotation||[1,0,0,0,1,0,0,0,1];
+    for(let k=0;k<3;k++){
+      let v=0;for(let j=0;j<3;j++)v+=r[k*3+j]*s.localOffset[j];
+      for(let i=0;i<s.smoothIds.length;i++)v+=this.p[s.smoothIds[i]][k]*s.smoothWeights[i];out[k]=v;
+    }return out;
   }
   pin(s,target){
     // Constrain exactly the same continuous skin that is drawn on screen.
     const merged=new Map();s.smoothIds.forEach((id,i)=>merged.set(id,(merged.get(id)||0)+s.smoothWeights[i]));
     const ids=[...merged.keys()],weights=[...merged.values()];
-    const offset=s.surfacePoint.map((v,k)=>v-ids.reduce((sum,id,i)=>sum+this.rest[id][k]*weights[i],0));
+    const r=this.renderRotation||[1,0,0,0,1,0,0,0,1];
+    const offset=[0,1,2].map(k=>s.localOffset.reduce((sum,v,j)=>sum+r[k*3+j]*v,0));
     this.grab={...s,ids,weights,offset,target:[...target]};
   }
   frame(){
@@ -72,7 +81,8 @@ export class Jelly {
       const det=a0*co[0]+b*co[1]+c*co[2];if(Math.abs(det)<1e-12)break;
       a=a.map((v,j)=>(v+co[j]/det)*.5);
     }
-    if(!a.every(Number.isFinite))a=[1,0,0,0,1,0,0,0,1];
+    const det=a[0]*(a[4]*a[8]-a[5]*a[7])-a[1]*(a[3]*a[8]-a[5]*a[6])+a[2]*(a[3]*a[7]-a[4]*a[6]);
+    if(!a.every(Number.isFinite)||det<.99||det>1.01)a=this.renderRotation||[1,0,0,0,1,0,0,0,1];
     return {center,restCenter,rotation:a,normal:[a[1],a[4],a[7]]};
   }
   recover(dt){
@@ -82,14 +92,9 @@ export class Jelly {
       let goal=f.center[k];for(let j=0;j<3;j++)goal+=f.rotation[k*3+j]*(this.rest[i][j]-f.restCenter[j]);
       this.p[i][k]+=(goal-this.p[i][k])*rate;
     }
-    if(!this.grab){
-      const origin=[0,0,0];for(let i=0;i<81;i++)for(let k=0;k<3;k++)origin[k]+=this.p[i][k]/81;
-      for(let i=0;i<81;i++){
-        const d=this.p[i].reduce((s,v,k)=>s+(v-origin[k])*f.normal[k],0);
-        for(let k=0;k<3;k++)this.p[i][k]-=d*f.normal[k];
-      }
-      const low=Math.min(...this.p.map(p=>p[1]));if(low<this.floor)for(const p of this.p)p[1]+=this.floor-low;
-    }
+    // Contact projects only penetrating particles. Lifting the whole body here
+    // converted geometric correction into upward velocity and prolonged flight.
+    for(const p of this.p)p[1]=Math.max(this.floor,p[1]);
   }
   backPlane(){
     const normal=this.frame().normal,origin=[0,0,0];

@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=recovery-08";
-import { shapeMapper } from "./shapes.js?v=recovery-08";
+import { Jelly } from "./physics.js?v=flight-09";
+import { shapeMapper } from "./shapes.js?v=flight-09";
 
 const canvas = document.querySelector("#scene");
 const hint = document.querySelector("#hint");
@@ -255,6 +255,7 @@ function animate(now){
     if(body.grab?.desired)for(let k=0;k<3;k++)body.grab.target[k]+=(body.grab.desired[k]-body.grab.target[k])*(1-Math.exp(-36*stepDt));
     body.step(stepDt,settings);
   }
+  body.prepareRender();
   // The render skin has more detail than the internal volume mesh.
   for(let i=0;i<vertexCount;i++){
     body.renderSample(skins[i],renderPoint);current[i].set(...renderPoint);
