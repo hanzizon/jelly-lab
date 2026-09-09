@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Cormorant+Garamond:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=jam-03" />
+    <link rel="stylesheet" href="./styles.css?v=controls-05" />
   </head>
   <body>
     <div class="page-shell">
@@ -44,17 +44,9 @@
             <output id="firmnessValue">0.06</output>
           </label>
 
-          <label class="control-row">
-            <span>내부 감쇠</span>
-            <input id="damping" type="range" min="0.75" max="0.98" step="0.005" value="0.95" />
-            <output id="dampingValue">0.95</output>
-          </label>
+          <label class="control-row"><span>반사광 밝기</span><input id="brightness" type="range" min="0" max="2.5" step="0.05" value="1" /><output id="brightnessValue">1.00</output></label>
 
-          <label class="control-row">
-            <span>표면 매끈함</span>
-            <input id="smoothing" type="range" min="0.01" max="0.14" step="0.005" value="0.08" />
-            <output id="smoothingValue">0.08</output>
-          </label>
+          <label class="control-row"><span>확대</span><input id="zoom" type="range" min="0.75" max="1.8" step="0.05" value="1" /><output id="zoomValue">1.00</output></label>
 
           <div class="button-row">
             <button id="nudge" type="button">툭 치기</button>
@@ -70,6 +62,6 @@
     </div>
 
     <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.167.1/build/three.module.js"}}</script>
-    <script type="module" src="./app.js?v=jam-03"></script>
+    <script type="module" src="./app.js?v=controls-05"></script>
   </body>
 </html>

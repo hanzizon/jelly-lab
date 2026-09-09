@@ -27,48 +27,70 @@ function silhouette(x,z,kind){
     d=Math.min(d,polygon(x,z,[[-.82,.36],[.82,.36],[.87,1.05],[-.87,1.05]])*2,polygon(x,z,[[-.64,-.89],[-.91,-.58],[-.71,-.51],[-.81,-.2],[-.59,-.24],[.69,-.12],[.91,-.3],[.72,-.41],[.78,-.7],[.47,-1.06]])*2);
   }return d;
 }
-function relief(x,z,kind){
-  let h=.16*soft(ellipse(x,z,0,-.29,.61,.55),.07);
-  h+=.14*soft(polygon(x,z,kind==='vocal'?bangsVocal:bangsDJ),.025);
-  // Rounded ears, eyes cut into the face, and raised pupil centers.
+
+function features(x,z,kind){
+  const hair=soft(polygon(x,z,kind==='vocal'?bangsVocal:bangsDJ),.035);
+  const face=soft(ellipse(x,z,0,-.24,.61,.55),.065);
+  let eyes=0,pupils=0,stitches=0,ears=0,feet=0;
   for(const side of [-1,1]){
-    h+=.06*soft(ellipse(x,z,side*.67,-.1,.115,.18),.09);
-    const ex=side*.27,ez=kind==='vocal'?-.12:-.06;
-    h-=.105*soft(ellipse(x,z,ex,ez,.105,.105),.1);
-    h+=.038*soft(ellipse(x,z,ex,ez+.015,.048,.06),.12);
-    if(kind==='dj')h+=.085*line(x,z,[[ex-.13,ez-.1],[ex+.13,ez-.07]],.035);
+    const ex=side*.27;
+    ears=Math.max(ears,soft(ellipse(x,z,side*.67,-.1,.105,.16),.12));
     if(kind==='vocal'){
-      h-=.055*line(x,z,[[side*.39,.01],[side*.49,.05],[side*.39,.08]],.018);
-      h+=.07*soft(ellipse(x,z,side*.24,.94,.2,.14),.12);
-      h-=.04*line(x,z,[[side*.52,-.15],[side*.59,.2],[side*.58,.62]],.022);
+      eyes=Math.max(eyes,soft(ellipse(x,z,ex,-.105,.093,.105),.14));
+      pupils=Math.max(pupils,soft(ellipse(x,z,ex-.022,-.145,.023,.027),.2));
+      feet=Math.max(feet,soft(ellipse(x,z,side*.235,.985,.19,.135),.12));
+      for(let i=0;i<3;i++)stitches=Math.max(stitches,line(x,z,[[side*(.37+i*.04),.035],[side*(.385+i*.04),.095]],.015));
+    }else{
+      const eye=[ [ex-.13,-.16],[ex+.13,-.13],[ex+.105,.045],[ex-.095,.04] ];
+      eyes=Math.max(eyes,soft(polygon(x,z,eye),.022));
+      pupils=Math.max(pupils,soft(polygon(x,z,[[ex-.055,-.09],[ex+.055,-.08],[ex+.048,-.035],[ex-.055,-.04]]),.012));
     }
   }
+  const mouth=kind==='vocal'?soft(polygon(x,z,[[-.2,.16],[.2,.16],[.17,.28],[.08,.34],[-.06,.35],[-.17,.28]]),.025):soft(polygon(x,z,[[-.13,.14],[.14,.14],[.015,.35]]),.025);
+  if(kind==='vocal')for(let i=0;i<7;i++){const u=-.18+i*.06;stitches=Math.max(stitches,line(x,z,[[u,.125],[u+.017,.2]],.014));}
+  const clothes=kind==='vocal'?soft(polygon(x,z,[[-.38,.48],[.38,.48],[.33,.88],[-.33,.88]]),.04):soft(polygon(x,z,[[-.8,.42],[.8,.42],[.82,1],[-.82,1]]),.04);
+  let seam=kind==='vocal'?line(x,z,[[-.27,.54],[0,.66],[.27,.54]],.025):line(x,z,[[-.68,.52],[.67,.52]],.025);
   if(kind==='vocal'){
-    const mouth=[[-.2,.15],[.2,.15],[.16,.28],[.07,.34],[-.05,.35],[-.16,.28]];
-    h-=.09*soft(polygon(x,z,mouth),.018);
-    for(let i=0;i<7;i++){const u=-.18+i*.06;h+=.05*line(x,z,[[u,.115],[u+.018,.185]],.013);}
-    for(let i=0;i<29;i++){const a=-Math.PI+i/28*Math.PI*1.45;const cx=.71*Math.cos(a),cz=-.36+.75*Math.sin(a);h-=.045*line(x,z,[[cx*.96,cz],[cx*1.04,cz+.035]],.012);}
-    h+=.09*soft(polygon(x,z,[[-.37,.45],[.37,.45],[.32,.87],[-.32,.87]]),.03);
-    h-=.05*line(x,z,[[-.29,.5],[0,.62],[.28,.5]],.023);
-    // Microphone and stem are part of the same molded surface.
-    h+=.09*soft(ellipse(x,z,.53,.27,.09,.13),.13);
-    h+=.06*line(x,z,[[.53,.33],[.48,.84]],.035);
-  }else{
-    h-=.095*soft(polygon(x,z,[[-.13,.12],[.14,.12],[.01,.34]]),.016);
-    h+=.12*soft(polygon(x,z,[[-.79,.42],[.79,.42],[.8,.98],[-.8,.98]]),.023);
-    h-=.045*line(x,z,[[-.69,.51],[.68,.51]],.025);
-    for(const ex of [-.43,.43])h-=.055*Math.exp(-((ellipse(x,z,ex,.74,.19,.14)/.15)**2));
-    for(let i=0;i<3;i++)h+=.035*line(x,z,[[i*.07-.07,.64],[i*.07-.07,.87]],.017);
-    h+=.08*soft(ellipse(x,z,.63,.19,.08,.11),.12);
-    h+=.05*line(x,z,[[.63,.25],[.75,.39]],.025);
-    h-=.04*line(x,z,[[.15,-1.01],[.32,-.76],[.4,-.51]],.018);
-  }return h;
+    for(let i=0;i<21;i++){const angle=Math.PI+i/20*Math.PI;const cx=.70*Math.cos(angle),cz=-.36+.75*Math.sin(angle);seam=Math.max(seam,line(x,z,[[cx*.965,cz-.025],[cx*1.015,cz+.025]],.012));}
+  }else for(const ex of [-.43,.43])seam=Math.max(seam,Math.exp(-((ellipse(x,z,ex,.75,.17,.13)/.16)**2)));
+  const mic=soft(ellipse(x,z,kind==='vocal'?.54:.64,.24,.078,.105),.16);
+  const stem=kind==='vocal'?line(x,z,[[.54,.31],[.49,.86]],.032):line(x,z,[[.65,.31],[.77,.42]],.027);
+  return {hair,face,eyes,pupils,mouth,stitches,ears,feet,clothes,seam,mic,stem};
+}
+function relief(x,z,kind){
+  const f=features(x,z,kind);
+  // Rounded tier changes replace narrow, steep ridges that glittered when moving.
+  let h=.20*f.face*(1-f.hair)+.30*f.hair+.08*f.ears;
+  h+=.085*f.eyes-.025*f.pupils-.085*f.mouth-.025*f.stitches;
+  h+=.14*f.clothes+.12*f.feet-.035*f.seam+.13*f.mic+.07*f.stem;
+  return h;
+}
+export function characterTone(point,kind){
+  if(kind==='cylinder')return {shade:1,light:0};
+  const x=point[0]/1.32,z=point[2]/1.32,f=features(x,z,kind);
+  const front=1-soft(point[1]-.10,.06);
+  let shade=.70,light=0;
+  // All tones are derived from the selected character's one base hue.
+  shade+=.30*f.face;light=.22*f.face;
+  shade*=1-.48*f.hair;light*=1-f.hair;
+  const dark=Math.max(f.eyes*.90,f.mouth*.72,f.stitches*.75,f.seam*.40,f.mic*.85,f.stem*.65,f.feet*.40,f.clothes*(kind==='dj'?.45:.18));
+  shade*=1-dark;light*=1-dark;
+  light=Math.max(light,f.pupils*.48);
+  return {shade:1+(shade-1)*front,light:light*front};
 }
 export function shapeMapper(kind){
   if(kind==='cylinder')return p=>[...p];
+  const count=512,radii=[];
+  for(let i=0;i<count;i++){
+    const a=i/count*Math.PI*2;let lo=0,hi=1.7;
+    for(let j=0;j<18;j++){const mid=(lo+hi)/2;if(silhouette(Math.cos(a)*mid,Math.sin(a)*mid,kind)<0)lo=mid;else hi=mid;}
+    radii.push(lo);
+  }
+  const rounded=radii.map((v,i)=>{let sum=0,weight=0;for(let k=-5;k<=5;k++){const w=Math.exp(-k*k/10);sum+=radii[(i+k+count)%count]*w;weight+=w;}return sum/weight;});
   return p=>{
     const r=Math.hypot(p[0],p[2])/1.64,a=Math.atan2(p[2],p[0]);
-    let lo=0,hi=1.7;for(let i=0;i<18;i++){const mid=(lo+hi)/2;if(silhouette(Math.cos(a)*mid,Math.sin(a)*mid,kind)<0)lo=mid;else hi=mid;}
+    const at=((a+Math.PI*2)%(Math.PI*2))/(Math.PI*2)*count,index=Math.floor(at),mix=at-index;
+    const lo=rounded[index]*(1-mix)+rounded[(index+1)%count]*mix;
     const x=Math.cos(a)*lo*r,z=Math.sin(a)*lo*r;
     const dome=.22+.15*Math.sqrt(Math.max(0,1-r*r)),top=dome+relief(x,z,kind);
     return [x*1.32,-.58+(p[1]+.58)/1.16*(top+.58),z*1.32];

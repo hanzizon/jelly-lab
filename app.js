@@ -1,13 +1,13 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=jam-03";
-import { shapeMapper } from "./shapes.js?v=jam-03";
+import { Jelly } from "./physics.js?v=controls-05";
+import { shapeMapper, characterTone } from "./shapes.js?v=controls-05";
 
 const canvas = document.querySelector("#scene");
 const hint = document.querySelector("#hint");
-const ui = Object.fromEntries(["mass", "firmness", "damping", "smoothing", "massValue", "firmnessValue", "dampingValue", "smoothingValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
-const defaults = { mass: 1.25, firmness: 0.06, damping: 0.95, smoothing: 0.08 };
-const settings = { ...defaults };
+const ui = Object.fromEntries(["mass", "firmness", "brightness", "zoom", "massValue", "firmnessValue", "brightnessValue", "zoomValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
+const defaults = { mass: 1.25, firmness: 0.06, brightness: 1, zoom: 1 };
+const settings = { ...defaults, damping: .95 };
 function syncOutputs() {
   for (const name of Object.keys(defaults)) {
     settings[name] = Number(ui[name].value);
@@ -17,13 +17,14 @@ function syncOutputs() {
 syncOutputs();
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 700 ? 1 : 1.25));
+renderer.setPixelRatio(Math.min(2,Math.max(1.5,window.devicePixelRatio)));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xeef2f7);
 const rearTarget = new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+rearTarget.samples = 4;
 rearTarget.depthTexture = new THREE.DepthTexture(1,1,THREE.UnsignedIntType);
 const bufferSize = new THREE.Vector2();
 const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 80);
@@ -33,11 +34,12 @@ function resizeScene() {
   const distance = 3.2 / (Math.tan(THREE.MathUtils.degToRad(17)) * Math.min(camera.aspect, 1));
   const character=document.getElementById('shape')?.value !== 'cylinder';
   camera.position.set(0, character?7:5, distance*(character?.62:1));
-  camera.lookAt(0, 0.15, 0);
+  camera.lookAt(0, .15-.95*THREE.MathUtils.clamp((settings.zoom-1)/.5,0,1), 0);
+  camera.zoom=settings.zoom;
   camera.updateProjectionMatrix();
   renderer.setSize(width, height);
   renderer.getDrawingBufferSize(bufferSize);
-  rearTarget.setSize(Math.max(1,Math.round(bufferSize.x*.8)),Math.max(1,Math.round(bufferSize.y*.8)));
+  rearTarget.setSize(Math.max(1,Math.round(bufferSize.x)),Math.max(1,Math.round(bufferSize.y)));
 }
 resizeScene();
 window.addEventListener("resize", resizeScene);
@@ -109,7 +111,7 @@ for (let i = 1; i <= 10; i++) {
   profile.push(new THREE.Vector2(1.4 + 0.24 * Math.cos(a), 0.34 + 0.24 * Math.sin(a)));
 }
 for (let i = 39; i >= 0; i--) profile.push(new THREE.Vector2(1.4 * i / 40, 0.58));
-const source = new THREE.LatheGeometry(profile, 112).toNonIndexed();
+const source = new THREE.LatheGeometry(profile, 160).toNonIndexed();
 const lookup = new Map(), points = [], indices = [];
 for (let i = 0; i < source.attributes.position.count; i++) {
   const v = new THREE.Vector3().fromBufferAttribute(source.attributes.position, i);
@@ -172,14 +174,37 @@ jellyMaterial.onBeforeCompile=shader=>{
     '#include <opaque_fragment>\ngl_FragColor.a = 0.48 + 0.5 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);');
 };
 jellyMaterial.customProgramCacheKey=()=> 'jelly-clear-film-v3';
+const characterMaterial=new THREE.MeshPhysicalMaterial({
+  color:0xffffff,vertexColors:true,roughness:.26,metalness:0,
+  transmission:.05,thickness:.8,ior:1.35,attenuationDistance:2.4,
+  clearcoat:.35,clearcoatRoughness:.18,envMapIntensity:.65
+});
+const colors=new THREE.Float32BufferAttribute(new Float32Array(vertexCount*3).fill(1),3);
+jellyGeometry.setAttribute('color',colors);
 const jellyMesh=new THREE.Mesh(jellyGeometry,jellyMaterial);jellyGroup.add(jellyMesh);
+const characterColors={vocal:0x162ae3,dj:0x3c458f};
+function updateAppearance(kind,mapper){
+  const isCharacter=kind!=='cylinder';jellyMesh.material=isCharacter?characterMaterial:jellyMaterial;
+  const base=new THREE.Color(isCharacter?characterColors[kind]:0x2f6bff),white=new THREE.Color(0xffffff);
+  if(isCharacter){
+    characterMaterial.attenuationColor.copy(base);
+    for(let i=0;i<vertexCount;i++){
+      const tone=characterTone(mapper(points[i].toArray()),kind);
+      const color=base.clone().multiplyScalar(tone.shade).lerp(white,tone.light);
+      colors.setXYZ(i,color.r,color.g,color.b);
+    }colors.needsUpdate=true;
+  }
+  ground.material.color.copy(isCharacter?base.clone().lerp(white,.5):white);
+  rim.color.copy(isCharacter?base.clone().lerp(white,.82):new THREE.Color(0xbfd8ff));
+  key.intensity=isCharacter?2.1:1.3;
+}
 
 let body = new Jelly();
 let skins = points.map(p => body.skin(p.toArray()));
 const shapeSelect=document.getElementById('shape');
 function changeShape(){
   release();const mapper=shapeMapper(shapeSelect.value);body=new Jelly(mapper);
-  skins=points.map(p=>body.skin(p.toArray(),mapper(p.toArray())));resizeScene();
+  skins=points.map(p=>body.skin(p.toArray(),mapper(p.toArray())));updateAppearance(shapeSelect.value,mapper);resizeScene();
 }
 shapeSelect.addEventListener('change',changeShape);
 jellyGroup.position.set(0,0,0);
@@ -221,9 +246,16 @@ function release(){capturedIndex=-1;body.release();if(activePointer!==null && ca
 canvas.addEventListener('pointerup',release);canvas.addEventListener('pointercancel',release);canvas.addEventListener('lostpointercapture',release);
 window.addEventListener('blur',release);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){release();accumulator=0;last=performance.now();}});
-for(const name of Object.keys(defaults))ui[name].addEventListener('input',syncOutputs);
+function updateViewControls(){
+  camera.zoom=settings.zoom;camera.lookAt(0,.15-.95*THREE.MathUtils.clamp((settings.zoom-1)/.5,0,1),0);camera.updateProjectionMatrix();
+  const b=settings.brightness;
+  jellyMaterial.envMapIntensity=1.15*b;rearMaterial.envMapIntensity=1.3*b;characterMaterial.envMapIntensity=.65*b;
+  for(const mat of [jellyMaterial,rearMaterial,characterMaterial])mat.specularIntensity=b;
+  jellyMaterial.clearcoat=.18*b;rearMaterial.clearcoat=.25*b;characterMaterial.clearcoat=.35*b;
+}
+for(const name of Object.keys(defaults))ui[name].addEventListener('input',()=>{syncOutputs();updateViewControls();});
 ui.nudge.addEventListener('click',()=>{release();body.nudge();});
-ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of Object.keys(defaults))ui[name].value=defaults[name];syncOutputs();ui.autorotate.checked=true;ui.shadowToggle.checked=true;});
+ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of Object.keys(defaults))ui[name].value=defaults[name];syncOutputs();updateViewControls();ui.autorotate.checked=true;ui.shadowToggle.checked=true;});
 const renderPoint=[0,0,0];
 let last=performance.now();
 function animate(now){
@@ -239,12 +271,14 @@ function animate(now){
   for(let i=0;i<vertexCount;i++){
     body.renderSample(skins[i],renderPoint);current[i].set(...renderPoint);
   }
-  const smooth=settings.smoothing*1.8;
+  const smooth=.10;
   for(let i=0;i<vertexCount;i++){
     const p=current[i];let x=0,y=0,z=0;
     for(const j of neighbors[i]){x+=current[j].x;y+=current[j].y;z+=current[j].z;}
     const n=neighbors[i].length;
-    positionAttr.setXYZ(i,p.x*(1-smooth)+x/n*smooth,p.y*(1-smooth)+y/n*smooth,p.z*(1-smooth)+z/n*smooth);
+    let surfaceY=p.y*(1-smooth)+y/n*smooth;
+    if(shapeSelect.value!=='cylinder' && points[i].y<-.579 && !body.grab && Math.abs(p.y-body.floor)<.025)surfaceY=body.floor;
+    positionAttr.setXYZ(i,p.x*(1-smooth)+x/n*smooth,surfaceY,p.z*(1-smooth)+z/n*smooth);
   }
   // Spread the tiny capture correction over a smooth patch, never one needle vertex.
   if(body.grab && capturedIndex>=0){
@@ -260,11 +294,14 @@ function animate(now){
   ground.position.x=center.x;ground.position.z=center.z;
   ground.material.opacity=1/(1+Math.max(0,center.y+.97)*.65);ground.visible=ui.shadowToggle.checked;
   if(ui.autorotate.checked&&!body.grab){for(let i=0;i<body.p.length;i++){const p=body.p[i],a=dt*.025,x=p[0]-center.x,z=p[2]-center.z;p[0]=center.x+x*Math.cos(a)+z*Math.sin(a);p[2]=center.z+z*Math.cos(a)-x*Math.sin(a);}}
-  jellyMesh.visible=false;rearMesh.visible=true;
-  renderer.setRenderTarget(rearTarget);renderer.render(scene,camera);
+  if(shapeSelect.value==='cylinder'){
+    jellyMesh.visible=false;rearMesh.visible=true;
+    renderer.setRenderTarget(rearTarget);renderer.render(scene,camera);
+  }
   jellyMesh.visible=true;rearMesh.visible=false;
   renderer.setRenderTarget(null);renderer.render(scene,camera);
 }
 requestAnimationFrame(animate);
+
 
 
