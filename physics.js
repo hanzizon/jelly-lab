@@ -1,6 +1,6 @@
 // A small volumetric XPBD mesh. Positions are world-space: a pinch lifts the body.
 export class Jelly {
-  constructor() {
+  constructor(mapper=null) {
     this.n = 9; this.h = 5; this.floor = -1.55;
     this.rest = []; this.edges = []; this.tets = []; this.grab = null;
     const id = (x,y,z) => (y*this.n+z)*this.n+x;
@@ -8,6 +8,7 @@ export class Jelly {
       const u=x/4-1, v=z/4-1;
       this.rest.push([1.64*u*Math.sqrt(1-v*v/2), y/4*1.16-.58, 1.64*v*Math.sqrt(1-u*u/2)]);
     }
+    if(mapper)this.rest=this.rest.map(p=>mapper(p));
     const seen=new Set();
     for(let y=0;y<4;y++) for(let z=0;z<8;z++) for(let x=0;x<8;x++) {
       const c=[id(x,y,z),id(x+1,y,z),id(x,y+1,z),id(x+1,y+1,z),id(x,y,z+1),id(x+1,y,z+1),id(x,y+1,z+1),id(x+1,y+1,z+1)];
@@ -29,7 +30,7 @@ export class Jelly {
     return (u[0]*(v[1]*w[2]-v[2]*w[1])+u[1]*(v[2]*w[0]-v[0]*w[2])+u[2]*(v[0]*w[1]-v[1]*w[0]))/6;
   }
   reset(){this.p=this.rest.map(p=>[p[0],p[1]+this.floor+.59,p[2]]);this.v=this.p.map(()=>[0,0,0]);this.grab=null;}
-  skin(point) {
+  skin(point, surfacePoint=point) {
     const x=point[0]/1.64,z=point[2]/1.64;
     const inv=(a,b)=>Math.sign(a)*Math.sqrt(Math.max(0,((2+a*a-b*b)-Math.sqrt(Math.max(0,(2+a*a-b*b)**2-8*a*a)))/2));
     const g=[(inv(x,z)+1)*4,(point[1]+.58)/1.16*4,(inv(z,x)+1)*4].map((v,k)=>Math.max(0,Math.min(k===1?4:8,v)));
@@ -39,10 +40,19 @@ export class Jelly {
       ids.push(((base[1]+y)*9+base[2]+z)*9+base[0]+x);
       weights.push((x?f[0]:1-f[0])*(y?f[1]:1-f[1])*(z?f[2]:1-f[2]));
     }
-    const offset=point.map((v,k)=>v-ids.reduce((s,id,i)=>s+this.rest[id][k]*weights[i],0));
-    return {ids,weights,offset};
+    const offset=surfacePoint.map((v,k)=>v-ids.reduce((s,id,i)=>s+this.rest[id][k]*weights[i],0));
+    const cubic=(t)=>[-.5*t+t*t-.5*t*t*t,1-2.5*t*t+1.5*t*t*t,.5*t+2*t*t-1.5*t*t*t,-.5*t*t+.5*t*t*t];
+    const w=g.map((v,k)=>cubic(v-base[k])), smoothIds=[],smoothWeights=[];
+    for(let y=0;y<4;y++)for(let z=0;z<4;z++)for(let x=0;x<4;x++){
+      const ix=Math.max(0,Math.min(8,base[0]+x-1)),iy=Math.max(0,Math.min(4,base[1]+y-1)),iz=Math.max(0,Math.min(8,base[2]+z-1));
+      smoothIds.push((iy*9+iz)*9+ix);smoothWeights.push(w[0][x]*w[1][y]*w[2][z]);
+    }
+    return {ids,weights,offset,smoothIds,smoothWeights,surfacePoint};
   }
   sample(s){return s.offset.map((v,k)=>v+s.ids.reduce((sum,id,i)=>sum+this.p[id][k]*s.weights[i],0));}
+  renderSample(s,out){
+    for(let k=0;k<3;k++){let v=s.surfacePoint[k];for(let i=0;i<s.smoothIds.length;i++){const id=s.smoothIds[i];v+=(this.p[id][k]-this.rest[id][k])*s.smoothWeights[i];}out[k]=v;}return out;
+  }
   pin(s,target){this.grab={...s,target:[...target]};}
   release(){
     if(!this.grab)return;this.grab=null;

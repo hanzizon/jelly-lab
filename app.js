@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=clear-02";
-import { RGBELoader } from "https://unpkg.com/three@0.167.1/examples/jsm/loaders/RGBELoader.js";
+import { Jelly } from "./physics.js?v=jam-03";
+import { shapeMapper } from "./shapes.js?v=jam-03";
 
 const canvas = document.querySelector("#scene");
 const hint = document.querySelector("#hint");
@@ -31,7 +31,8 @@ function resizeScene() {
   const { width, height } = canvas.parentElement.getBoundingClientRect();
   camera.aspect = width / Math.max(height, 1);
   const distance = 3.2 / (Math.tan(THREE.MathUtils.degToRad(17)) * Math.min(camera.aspect, 1));
-  camera.position.set(0, 3.6, distance);
+  const character=document.getElementById('shape')?.value !== 'cylinder';
+  camera.position.set(0, character?7:5, distance*(character?.62:1));
   camera.lookAt(0, 0.15, 0);
   camera.updateProjectionMatrix();
   renderer.setSize(width, height);
@@ -51,17 +52,20 @@ function softbox(width, height, position, strength) {
   panel.lookAt(0, 0, 0);
   studio.add(panel);
 }
-softbox(4, 6, [-4, 4, 5], 5);
-softbox(1.3, 5, [4, 1, 2], 3.5);
-softbox(3, 3, [1, 5, -3], 4);
-softbox(5, 1.5, [-1, -3, 4], 1.8);
-const pmrem = new THREE.PMREMGenerator(renderer);
-const environment = pmrem.fromScene(studio, 0.01);
-scene.environment = environment.texture;
-new RGBELoader().load("https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/poly_haven_studio_1k.hdr", texture => {
-  const hdr = pmrem.fromEquirectangular(texture);
-  scene.environment = hdr.texture; texture.dispose(); environment.dispose(); pmrem.dispose();
-}, undefined, () => pmrem.dispose());
+// A framed window, with dark mullions separating nine bright panes.
+function windowLight(position,width,height,strength){
+  const frame=new THREE.Group();frame.position.set(...position);frame.lookAt(0,0,0);
+  for(let row=0;row<3;row++)for(let col=0;col<3;col++){
+    const pane=new THREE.Mesh(new THREE.PlaneGeometry(width/3-.09,height/3-.09),new THREE.MeshBasicMaterial({color:new THREE.Color().setScalar(strength),side:THREE.DoubleSide}));
+    pane.position.set((col-1)*width/3,(row-1)*height/3,0);frame.add(pane);
+  }studio.add(frame);
+}
+studio.background=new THREE.Color(0x444c5c);
+windowLight([-3,5,4],4.5,6,4.5);
+windowLight([4,2,-3],2,3.2,2.2);
+const pmrem=new THREE.PMREMGenerator(renderer);
+const environment=pmrem.fromScene(studio,0);
+scene.environment=environment.texture;pmrem.dispose();
 studio.traverse(object => { if (object.isMesh) { object.geometry.dispose(); object.material.dispose(); } });
 scene.add(new THREE.HemisphereLight(0xe9f3ff, 0x8c98b0, 0.65));
 const key = new THREE.DirectionalLight(0xffffff, 1.3);
@@ -81,7 +85,15 @@ ctx.fillStyle = gradient; ctx.fillRect(0, 0, 128, 128);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(6, 4.8),
   new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shadowCanvas), transparent: true, depthWrite: false }));
 ground.rotation.x = -Math.PI / 2;
-ground.position.y = -1.55; scene.add(ground);
+ground.position.y = -1.545; scene.add(ground);
+// Fine floor seams give the transparent center a visible refracted reference.
+const floorCanvas=document.createElement('canvas');floorCanvas.width=floorCanvas.height=256;
+const floorContext=floorCanvas.getContext('2d');floorContext.fillStyle='#eef2f7';floorContext.fillRect(0,0,256,256);
+floorContext.strokeStyle='rgba(90,112,148,.28)';floorContext.lineWidth=3;
+floorContext.beginPath();floorContext.moveTo(0,0);floorContext.lineTo(256,0);floorContext.moveTo(0,0);floorContext.lineTo(0,256);floorContext.stroke();
+const floorTexture=new THREE.CanvasTexture(floorCanvas);floorTexture.wrapS=floorTexture.wrapT=THREE.RepeatWrapping;floorTexture.repeat.set(666,666);floorTexture.colorSpace=THREE.SRGBColorSpace;
+const floorMesh=new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),new THREE.MeshBasicMaterial({map:floorTexture,toneMapped:false}));floorMesh.rotation.x=-Math.PI/2;floorMesh.position.y=-1.56;scene.add(floorMesh);
+
 
 const jellyGroup = new THREE.Group(); scene.add(jellyGroup);
 // Closed, rounded flat cylinder. Dense concentric rings allow a fine pinch.
@@ -96,8 +108,8 @@ for (let i = 1; i <= 10; i++) {
   const a = i / 10 * Math.PI / 2;
   profile.push(new THREE.Vector2(1.4 + 0.24 * Math.cos(a), 0.34 + 0.24 * Math.sin(a)));
 }
-for (let i = 11; i >= 0; i--) profile.push(new THREE.Vector2(1.4 * i / 12, 0.58));
-const source = new THREE.LatheGeometry(profile, 80).toNonIndexed();
+for (let i = 39; i >= 0; i--) profile.push(new THREE.Vector2(1.4 * i / 40, 0.58));
+const source = new THREE.LatheGeometry(profile, 112).toNonIndexed();
 const lookup = new Map(), points = [], indices = [];
 for (let i = 0; i < source.attributes.position.count; i++) {
   const v = new THREE.Vector3().fromBufferAttribute(source.attributes.position, i);
@@ -123,23 +135,23 @@ const neighbors = links.map(set => [...set]);
 // Render the exit surface first. Standard screen-space transmission omits it.
 const rearMaterial = new THREE.MeshPhysicalMaterial({
   color:0x2f6bff, roughness:.025, metalness:0, side:THREE.BackSide,
-  transparent:true, opacity:.22, depthWrite:true, envMapIntensity:1.3,
+  transparent:true, opacity:.08, depthWrite:true, envMapIntensity:1.3,
   clearcoat:.25, clearcoatRoughness:.025
 });
 rearMaterial.onBeforeCompile = shader => {
   shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
-    'diffuseColor.a = 0.09 + 0.5 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);\n#include <opaque_fragment>');
+    'diffuseColor.a = 0.025 + 0.28 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);\n#include <opaque_fragment>');
 };
 const rearMesh=new THREE.Mesh(jellyGeometry,rearMaterial);jellyGroup.add(rearMesh);
 const jellyMaterial = new THREE.MeshPhysicalMaterial({
-  color:0xffffff, roughness:.018, metalness:0, transmission:0,
-  thickness:1, ior:1.32, clearcoat:.18, clearcoatRoughness:.025, envMapIntensity:1.15
+  color:0xffffff, roughness:.012, metalness:0, transmission:0, transparent:true, depthWrite:false,
+  thickness:1, ior:1.36, clearcoat:.18, clearcoatRoughness:.025, envMapIntensity:1.15
 });
 // Supply our own transmission buffer, avoiding a redundant built-in scene pass.
 jellyMaterial.defines={...jellyMaterial.defines,USE_TRANSMISSION:''};
 jellyMaterial.onBeforeCompile = shader => {
   Object.assign(shader.uniforms,{
-    transmission:{value:1},thickness:{value:1},attenuationDistance:{value:2.5},
+    transmission:{value:1},thickness:{value:1},attenuationDistance:{value:2.8},
     attenuationColor:{value:new THREE.Color(0x2f6bff)},
     jellyRear:{value:rearTarget.texture},jellyDepth:{value:rearTarget.depthTexture},
     jellyScreenSize:{value:bufferSize},jellyNear:{value:camera.near},jellyFar:{value:camera.far}
@@ -148,16 +160,28 @@ jellyMaterial.onBeforeCompile = shader => {
     .replace('uniform sampler2D transmissionSamplerMap;', 'uniform sampler2D jellyRear;\nuniform sampler2D jellyDepth;\nuniform vec2 jellyScreenSize;\nuniform float jellyNear;\nuniform float jellyFar;')
     .replace('return textureBicubic( transmissionSamplerMap, fragCoord.xy, lod );','return texture2D(jellyRear, clamp(fragCoord.xy, vec2(0.001), vec2(0.999)));')
     .replace('vec3 attenuatedColor = transmittance * transmittedLight.rgb;',
-      '#ifdef ENVMAP_TYPE_CUBE_UV\nvec3 throughDirection = refract(-v, n, 1.0 / ior);\nvec3 throughRoom = textureCubeUV(envMap, envMapRotation * throughDirection, roughness).rgb;\ntransmittedLight.rgb = mix(transmittedLight.rgb, throughRoom, 0.42);\n#endif\nvec3 attenuatedColor = transmittance * transmittedLight.rgb;');
+      '#ifdef ENVMAP_TYPE_CUBE_UV\nvec3 throughDirection = refract(-v, n, 1.0 / ior);\nvec3 throughRoom = textureCubeUV(envMap, envMapRotation * throughDirection, roughness).rgb;\ntransmittedLight.rgb = mix(transmittedLight.rgb, throughRoom, 0.03);\n#endif\nvec3 attenuatedColor = transmittance * transmittedLight.rgb;');
   shader.fragmentShader=shader.fragmentShader.replace('#include <transmission_pars_fragment>',pars)
     .replace('#include <transmission_fragment>',THREE.ShaderChunk.transmission_fragment.replace('material.thickness = thickness;',
       'float exitDepth = texture2D(jellyDepth, gl_FragCoord.xy / jellyScreenSize).r;\nfloat exitZ = -perspectiveDepthToViewZ(exitDepth, jellyNear, jellyFar);\nmaterial.thickness = clamp(exitZ - vViewPosition.z, 0.015, 3.8);'));
 };
-jellyMaterial.customProgramCacheKey=()=> 'jelly-rear-refraction-v2';
+const compileTransmission=jellyMaterial.onBeforeCompile;
+jellyMaterial.onBeforeCompile=shader=>{
+  compileTransmission(shader);
+  shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
+    '#include <opaque_fragment>\ngl_FragColor.a = 0.48 + 0.5 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);');
+};
+jellyMaterial.customProgramCacheKey=()=> 'jelly-clear-film-v3';
 const jellyMesh=new THREE.Mesh(jellyGeometry,jellyMaterial);jellyGroup.add(jellyMesh);
 
-const body = new Jelly();
-const skins = points.map(p => body.skin(p.toArray()));
+let body = new Jelly();
+let skins = points.map(p => body.skin(p.toArray()));
+const shapeSelect=document.getElementById('shape');
+function changeShape(){
+  release();const mapper=shapeMapper(shapeSelect.value);body=new Jelly(mapper);
+  skins=points.map(p=>body.skin(p.toArray(),mapper(p.toArray())));resizeScene();
+}
+shapeSelect.addEventListener('change',changeShape);
 jellyGroup.position.set(0,0,0);
 const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
 const plane = new THREE.Plane(), hitPoint = new THREE.Vector3();
@@ -175,7 +199,7 @@ canvas.addEventListener('pointerdown', event => {
   if(!hit) return;
   const face = hit.face, ids=[face.a,face.b,face.c];
   const index=ids.reduce((a,b)=>new THREE.Vector3().fromBufferAttribute(positionAttr,a).distanceToSquared(hit.point)<new THREE.Vector3().fromBufferAttribute(positionAttr,b).distanceToSquared(hit.point)?a:b);
-  const captured=new THREE.Vector3(...body.sample(skins[index]));
+  const captured=new THREE.Vector3().fromBufferAttribute(positionAttr,index);
   plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()),hit.point);
   dragOffset.copy(captured).sub(hit.point);
   capturedIndex=index; body.pin(skins[index],captured.toArray());
@@ -190,7 +214,7 @@ canvas.addEventListener('pointermove', event => {
     hitPoint.x=THREE.MathUtils.clamp(hitPoint.x,-2.7,2.7);
     hitPoint.y=THREE.MathUtils.clamp(hitPoint.y,-1.35,2.5);
     hitPoint.z=THREE.MathUtils.clamp(hitPoint.z,-1.6,1.6);
-    body.grab.target=hitPoint.toArray();
+    body.grab.desired=hitPoint.toArray();
   }
 });
 function release(){capturedIndex=-1;body.release();if(activePointer!==null && canvas.hasPointerCapture(activePointer))canvas.releasePointerCapture(activePointer);activePointer=null;canvas.style.cursor='grab';}
@@ -200,16 +224,20 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden){release();
 for(const name of Object.keys(defaults))ui[name].addEventListener('input',syncOutputs);
 ui.nudge.addEventListener('click',()=>{release();body.nudge();});
 ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of Object.keys(defaults))ui[name].value=defaults[name];syncOutputs();ui.autorotate.checked=true;ui.shadowToggle.checked=true;});
+const renderPoint=[0,0,0];
 let last=performance.now();
 function animate(now){
   requestAnimationFrame(animate);
   const dt=Math.max(.0001,Math.min((now-last)/1000,.15));last=now;
   // Consume ordinary frame time in full, including 15–25 fps frames.
   const steps=Math.max(1,Math.ceil(dt/(1/90))), stepDt=dt/steps;
-  for(let step=0;step<steps;step++)body.step(stepDt,settings);
+  for(let step=0;step<steps;step++){
+    if(body.grab?.desired)for(let k=0;k<3;k++)body.grab.target[k]+=(body.grab.desired[k]-body.grab.target[k])*(1-Math.exp(-36*stepDt));
+    body.step(stepDt,settings);
+  }
   // The render skin has more detail than the internal volume mesh.
   for(let i=0;i<vertexCount;i++){
-    const p=body.sample(skins[i]);current[i].set(...p);
+    body.renderSample(skins[i],renderPoint);current[i].set(...renderPoint);
   }
   const smooth=settings.smoothing*1.8;
   for(let i=0;i<vertexCount;i++){
@@ -218,7 +246,15 @@ function animate(now){
     const n=neighbors[i].length;
     positionAttr.setXYZ(i,p.x*(1-smooth)+x/n*smooth,p.y*(1-smooth)+y/n*smooth,p.z*(1-smooth)+z/n*smooth);
   }
-  if(body.grab && capturedIndex>=0) positionAttr.setXYZ(capturedIndex,...body.grab.target);
+  // Spread the tiny capture correction over a smooth patch, never one needle vertex.
+  if(body.grab && capturedIndex>=0){
+    const anchor=current[capturedIndex],restAnchor=points[capturedIndex];
+    for(let i=0;i<vertexCount;i++){
+      const weight=Math.exp(-points[i].distanceToSquared(restAnchor)/.035);
+      if(weight<.001)continue;
+      positionAttr.setXYZ(i,positionAttr.getX(i)+(body.grab.target[0]-anchor.x)*weight,positionAttr.getY(i)+(body.grab.target[1]-anchor.y)*weight,positionAttr.getZ(i)+(body.grab.target[2]-anchor.z)*weight);
+    }
+  }
   positionAttr.needsUpdate=true;jellyGeometry.computeVertexNormals();jellyGeometry.computeBoundingSphere();
   const center=body.p.reduce((a,p)=>a.add(new THREE.Vector3(...p)),new THREE.Vector3()).multiplyScalar(1/body.p.length);
   ground.position.x=center.x;ground.position.z=center.z;
