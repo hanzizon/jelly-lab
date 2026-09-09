@@ -1,5 +1,8 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
+import { Jelly } from "./physics.js?v=volume-01";
+import { RGBELoader } from "https://unpkg.com/three@0.167.1/examples/jsm/loaders/RGBELoader.js";
+
 const canvas = document.querySelector("#scene");
 const hint = document.querySelector("#hint");
 const ui = Object.fromEntries(["mass", "firmness", "damping", "smoothing", "massValue", "firmnessValue", "dampingValue", "smoothingValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
@@ -24,9 +27,9 @@ const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 80);
 function resizeScene() {
   const { width, height } = canvas.parentElement.getBoundingClientRect();
   camera.aspect = width / Math.max(height, 1);
-  const distance = 2.55 / (Math.tan(THREE.MathUtils.degToRad(17)) * Math.min(camera.aspect, 1));
+  const distance = 3.2 / (Math.tan(THREE.MathUtils.degToRad(17)) * Math.min(camera.aspect, 1));
   camera.position.set(0, 3.6, distance);
-  camera.lookAt(0, -0.35, 0);
+  camera.lookAt(0, 0.15, 0);
   camera.updateProjectionMatrix();
   renderer.setSize(width, height);
 }
@@ -50,7 +53,10 @@ softbox(5, 1.5, [-1, -3, 4], 1.8);
 const pmrem = new THREE.PMREMGenerator(renderer);
 const environment = pmrem.fromScene(studio, 0.01);
 scene.environment = environment.texture;
-pmrem.dispose();
+new RGBELoader().load("https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/poly_haven_studio_1k.hdr", texture => {
+  const hdr = pmrem.fromEquirectangular(texture);
+  scene.environment = hdr.texture; texture.dispose(); environment.dispose(); pmrem.dispose();
+}, undefined, () => pmrem.dispose());
 studio.traverse(object => { if (object.isMesh) { object.geometry.dispose(); object.material.dispose(); } });
 scene.add(new THREE.HemisphereLight(0xe9f3ff, 0x8c98b0, 1.5));
 const key = new THREE.DirectionalLight(0xffffff, 2.4);
@@ -110,11 +116,11 @@ for (let i = 0; i < indices.length; i += 3) {
 }
 const neighbors = links.map(set => [...set]);
 const jellyMaterial = new THREE.MeshPhysicalMaterial({
-  color: 0xf1f6ff, roughness: 0.05, metalness: 0,
-  transmission: 1, thickness: 2.8, ior: 1.24,
+  color: 0xd5e6ff, roughness: 0.035, metalness: 0,
+  transmission: 1, thickness: 3.1, ior: 1.24,
   opacity: 1, clearcoat: 1, clearcoatRoughness: 0.04,
-  attenuationColor: new THREE.Color(0x2f6bff), attenuationDistance: 4.2,
-  envMapIntensity: 1.15,
+  attenuationColor: new THREE.Color(0x2f6bff), attenuationDistance: 1.8,
+  envMapIntensity: 1.0,
 });
 // Approximate the shorter optical path at the silhouette; keep the rim clear.
 // Pinned to the Three.js r167 transmission chunk used above.
@@ -130,227 +136,73 @@ const jellyMesh = new THREE.Mesh(jellyGeometry, jellyMaterial);
 jellyGroup.add(jellyMesh);
 jellyGroup.position.y = -0.08;
 
-// Small inclusions make refraction visible, with delayed motion inside the gel.
-const inclusions = new THREE.Group();
-jellyGroup.add(inclusions);
-const beadMaterial = new THREE.MeshPhysicalMaterial({ color: 0x173b9a, roughness: 0.1, metalness: 0.12, clearcoat: 1 });
-for (const [x, y, z, radius] of [[-0.72,-0.22,0.28,0.085],[0.63,-0.16,-0.1,0.05],[-0.4,0.18,-0.42,0.035]]) {
-  const bead = new THREE.Mesh(new THREE.SphereGeometry(radius, 20, 12), beadMaterial);
-  bead.position.set(x, y, z); inclusions.add(bead);
-}
-const coreVelocity = new THREE.Vector3();
+
+const body = new Jelly();
+const skins = points.map(p => body.skin(p.toArray()));
+jellyGroup.position.set(0,0,0);
 const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
-const dragPlane = new THREE.Plane(), planeHit = new THREE.Vector3();
-const grabRest = new THREE.Vector3(), grabStart = new THREE.Vector3();
-const targetWorld = new THREE.Vector3(), easedWorld = new THREE.Vector3();
-const grabOffset = new THREE.Vector3(), targetLocal = new THREE.Vector3();
-const pullVector = new THREE.Vector3(), smoothedPull = new THREE.Vector3();
-const pointerVelocity = new THREE.Vector3(), lastPointerWorld = new THREE.Vector3();
-const average = new THREE.Vector3(), force = new THREE.Vector3(), temp = new THREE.Vector3();
-const centerOffset = new THREE.Vector3(), worldPoint = new THREE.Vector3();
-const bodyVelocity = new THREE.Vector3(), angularVelocity = new THREE.Vector3();
-const spin = new THREE.Quaternion(), inverseRotation = new THREE.Quaternion();
-const grabWeights = new Float32Array(vertexCount);
-const floorY = -1.55;
-let activePointer = null, dragging = false, accumulator = 0, grabIndex = 0;
-let lastPointerTime = 0, simulationTime = 0;
-
-function setPointer(event) {
+const plane = new THREE.Plane(), hitPoint = new THREE.Vector3();
+let activePointer = null, accumulator = 0, capturedIndex = -1;
+const dragOffset = new THREE.Vector3();
+function pointerRay(event) {
   const rect = canvas.getBoundingClientRect();
-  pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
-  raycaster.setFromCamera(pointer, camera);
+  pointer.set((event.clientX-rect.left)/rect.width*2-1,1-(event.clientY-rect.top)/rect.height*2);
+  raycaster.setFromCamera(pointer,camera);
 }
-function onPointerDown(event) {
-  if (activePointer !== null || (event.pointerType === "mouse" && event.button !== 0)) return;
-  jellyGroup.updateMatrixWorld(true); camera.updateMatrixWorld(true);
-  setPointer(event);
-  const hit = raycaster.intersectObject(jellyMesh, false)[0];
-  if (!hit) return;
-  dragging = true; activePointer = event.pointerId;
-  canvas.setPointerCapture(event.pointerId);
-  canvas.style.cursor = "grabbing"; hint.style.opacity = "0";
-  grabStart.copy(jellyMesh.worldToLocal(hit.point.clone()));
-  let distance = Infinity;
-  for (let i = 0; i < vertexCount; i++) {
-    const d = current[i].distanceToSquared(grabStart);
-    if (d < distance) { distance = d; grabIndex = i; }
-  }
-  grabRest.copy(rest[grabIndex]);
-  grabOffset.copy(current[grabIndex]).sub(grabStart);
-  // A fingertip-sized tip, with a gentle transition into the surrounding skin.
-  for (let i = 0; i < vertexCount; i++) {
-    const d = rest[i].distanceTo(grabRest);
-    grabWeights[i] = Math.exp(-d * d / 0.085);
-  }
-  targetWorld.copy(hit.point); easedWorld.copy(hit.point); lastPointerWorld.copy(hit.point);
-  pointerVelocity.set(0, 0, 0); bodyVelocity.set(0, 0, 0); angularVelocity.set(0, 0, 0);
-  lastPointerTime = performance.now();
-  dragPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(temp), hit.point);
-}
-function onPointerMove(event) {
-  if (event.pointerId !== activePointer) return;
-  setPointer(event);
-  if (!raycaster.ray.intersectPlane(dragPlane, planeHit)) return;
-  // Bound extreme off-screen stretches without changing a stationary target.
-  temp.copy(planeHit).sub(jellyGroup.position).clampLength(0, 4.5);
-  targetWorld.copy(jellyGroup.position).add(temp);
-  const now = performance.now(), dt = Math.max((now - lastPointerTime) / 1000, 0.008);
-  pointerVelocity.lerp(temp.copy(targetWorld).sub(lastPointerWorld).divideScalar(dt).clampLength(0, 12), 0.4);
-  lastPointerWorld.copy(targetWorld); lastPointerTime = now;
-}
-function endDrag(event, cancel = false) {
-  if (event && event.pointerId !== undefined && event.pointerId !== activePointer) return;
-  const wasDragging = dragging, id = activePointer;
-  activePointer = null; dragging = false;
-  if (id !== null && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
-  canvas.style.cursor = "grab";
-  if (wasDragging && !cancel) {
-    const freshness = Math.exp(-Math.max(0, performance.now() - lastPointerTime - 40) / 100);
-    temp.copy(pointerVelocity).multiplyScalar(0.4 * freshness);
-    worldPoint.copy(current[grabIndex]).sub(rest[grabIndex]).applyQuaternion(jellyGroup.quaternion);
-    temp.addScaledVector(worldPoint, 0.5).clampLength(0, 5.5);
-    bodyVelocity.addScaledVector(temp, 1 / Math.sqrt(settings.mass));
-    const lever = worldPoint.copy(grabRest).applyQuaternion(jellyGroup.quaternion);
-    angularVelocity.copy(lever).cross(temp).multiplyScalar(1.3 / settings.mass).clampLength(0, 7);
-  }
-  pullVector.set(0, 0, 0);
-}
-canvas.addEventListener("pointerdown", onPointerDown);
-canvas.addEventListener("pointermove", onPointerMove);
-canvas.addEventListener("pointerup", endDrag);
-canvas.addEventListener("pointercancel", event => endDrag(event, true));
-canvas.addEventListener("lostpointercapture", event => endDrag(event, true));
-window.addEventListener("blur", () => endDrag(undefined, true));
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) endDrag(undefined, true);
-  accumulator = 0; clock.getDelta();
+canvas.addEventListener('pointerdown', event => {
+  if(activePointer !== null) return;
+  pointerRay(event);
+  const hit = raycaster.intersectObject(jellyMesh)[0];
+  if(!hit) return;
+  const face = hit.face, ids=[face.a,face.b,face.c];
+  const index=ids.reduce((a,b)=>new THREE.Vector3().fromBufferAttribute(positionAttr,a).distanceToSquared(hit.point)<new THREE.Vector3().fromBufferAttribute(positionAttr,b).distanceToSquared(hit.point)?a:b);
+  const captured=new THREE.Vector3(...body.sample(skins[index]));
+  plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()),hit.point);
+  dragOffset.copy(captured).sub(hit.point);
+  capturedIndex=index; body.pin(skins[index],captured.toArray());
+  activePointer=event.pointerId; canvas.setPointerCapture(activePointer);
+  hint.classList.add('hidden'); canvas.style.cursor='grabbing';
 });
-function applyImpulseAt(point, impulse, radius = 0.9) {
-  for (let i = 0; i < vertexCount; i++) {
-    const weight = Math.exp(-rest[i].distanceToSquared(point) / (radius * radius));
-    velocity[i].addScaledVector(impulse, weight / settings.mass);
+canvas.addEventListener('pointermove', event => {
+  if(event.pointerId !== activePointer)return;
+  pointerRay(event);
+  if(raycaster.ray.intersectPlane(plane,hitPoint)){
+    hitPoint.add(dragOffset);
+    hitPoint.x=THREE.MathUtils.clamp(hitPoint.x,-4,4);
+    hitPoint.y=THREE.MathUtils.clamp(hitPoint.y,-1.35,4);
+    hitPoint.z=THREE.MathUtils.clamp(hitPoint.z,-3,3);
+    body.grab.target=hitPoint.toArray();
   }
-}
-function uploadSurface() {
-  for (let i = 0; i < vertexCount; i++) positionAttr.setXYZ(i, current[i].x, current[i].y, current[i].z);
-  positionAttr.needsUpdate = true;
-  jellyGeometry.computeVertexNormals();
-  jellyGeometry.computeBoundingSphere();
-}
-function resetShape() {
-  endDrag(undefined, true);
-  for (const name of Object.keys(defaults)) ui[name].value = defaults[name];
-  syncOutputs();
-  for (let i = 0; i < vertexCount; i++) { current[i].copy(rest[i]); velocity[i].set(0, 0, 0); }
-  smoothedPull.set(0, 0, 0); inclusions.position.set(0, 0, 0); coreVelocity.set(0, 0, 0);
-  bodyVelocity.set(0, 0, 0); angularVelocity.set(0, 0, 0);
-  jellyGroup.position.set(0, floorY + 0.58, 0); jellyGroup.rotation.set(0, -0.22, 0);
-  accumulator = 0; simulationTime = 0;
-  ui.autorotate.checked = true; ui.shadowToggle.checked = true; ground.visible = true;
-  hint.style.opacity = "1"; uploadSurface(); jellyGroup.updateMatrixWorld(true);
-}
-for (const name of Object.keys(defaults)) ui[name].addEventListener("input", syncOutputs);
-ui.reset.addEventListener("click", resetShape);
-ui.shadowToggle.addEventListener("change", () => { ground.visible = ui.shadowToggle.checked; });
-ui.nudge.addEventListener("click", () => {
-  if (dragging) return;
-  applyImpulseAt(new THREE.Vector3(-0.8, 0.4, 0.8), new THREE.Vector3(0.5, 1.5, -0.3));
-  bodyVelocity.add(new THREE.Vector3(0.3, 5.6, 0.1)).clampLength(0, 6.5);
-  angularVelocity.add(new THREE.Vector3(6.8, 0.4, -1.4)).clampLength(0, 7);
-  hint.style.opacity = "0";
 });
-
-// Fixed 120 Hz integration separates viscous surface deformation from body flight.
-function updateSoftBody(dt) {
-  simulationTime += dt;
-  if (dragging) {
-    easedWorld.lerp(targetWorld, 1 - Math.exp(-12 * dt));
-    targetLocal.copy(easedWorld).sub(jellyGroup.position).applyQuaternion(inverseRotation.copy(jellyGroup.quaternion).invert()).add(grabOffset);
-    smoothedPull.copy(targetLocal).sub(grabRest);
-  }
-  const stiffness = settings.firmness * 115;
-  const drag = 3.0 + (settings.damping - 0.75) * 18;
-  const decay = Math.exp(-drag * dt / Math.sqrt(settings.mass));
-  centerOffset.set(0, 0, 0);
-  for (let i = 0; i < vertexCount; i++) {
-    average.set(0, 0, 0);
-    for (const j of neighbors[i]) average.add(temp.copy(current[j]).sub(rest[j]));
-    average.multiplyScalar(1 / neighbors[i].length);
-    const displacement = temp.copy(current[i]).sub(rest[i]);
-    force.copy(displacement).multiplyScalar(-stiffness);
-    force.addScaledVector(average.sub(displacement), settings.smoothing * 550);
-    if (dragging) {
-      force.addScaledVector(average.copy(smoothedPull).sub(displacement), 145 * grabWeights[i]);
-      // A tiny held shimmer moves the neck, never the captured fingertip.
-      force.y += Math.sin(simulationTime * 5 + rest[i].x * 2) * 0.05 * grabWeights[i];
-    }
-    velocity[i].addScaledVector(force, dt / settings.mass).multiplyScalar(decay);
-  }
-  for (let i = 0; i < vertexCount; i++) {
-    current[i].addScaledVector(velocity[i], dt);
-    // The captured surface point stays at the target even when no move event arrives.
-    if (dragging && i === grabIndex) {
-      current[i].copy(targetLocal); velocity[i].set(0, 0, 0);
-    }
-    centerOffset.add(temp.copy(current[i]).sub(rest[i]));
-  }
-  centerOffset.multiplyScalar(1 / vertexCount);
-  coreVelocity.addScaledVector(temp.copy(centerOffset).multiplyScalar(0.3).sub(inclusions.position), dt * 16).multiplyScalar(Math.exp(-5 * dt));
-  inclusions.position.addScaledVector(coreVelocity, dt);
-}
-function updateBody(dt) {
-  if (dragging) return;
-  bodyVelocity.y -= 8.5 * dt;
-  bodyVelocity.x += -jellyGroup.position.x * 0.65 * dt;
-  bodyVelocity.z += -jellyGroup.position.z * 0.65 * dt;
-  bodyVelocity.multiplyScalar(Math.exp(-0.65 * dt));
-  jellyGroup.position.addScaledVector(bodyVelocity, dt);
-  angularVelocity.multiplyScalar(Math.exp(-0.45 * dt));
-  const angle = angularVelocity.length() * dt;
-  if (angle > 0.000001) {
-    spin.setFromAxisAngle(temp.copy(angularVelocity).normalize(), angle);
-    jellyGroup.quaternion.premultiply(spin).normalize();
-  }
-  let lowest = Infinity, contact = 0;
-  for (let i = 0; i < vertexCount; i++) {
-    worldPoint.copy(current[i]).applyQuaternion(jellyGroup.quaternion);
-    if (worldPoint.y < lowest) { lowest = worldPoint.y; contact = i; }
-  }
-  const penetration = floorY - jellyGroup.position.y - lowest;
-  if (penetration > 0) {
-    jellyGroup.position.y += penetration;
-    const impact = Math.max(0, -bodyVelocity.y);
-    if (bodyVelocity.y < 0) bodyVelocity.y = impact > 0.45 ? impact * 0.33 : 0;
-    bodyVelocity.x *= Math.exp(-5 * dt); bodyVelocity.z *= Math.exp(-5 * dt);
-    angularVelocity.multiplyScalar(Math.exp(-3.5 * dt));
-    // Contact torque lets the cylinder fall onto either flat face.
-    const up = worldPoint.set(0, 1, 0).applyQuaternion(jellyGroup.quaternion);
-    const sign = up.y >= 0 ? 1 : -1;
-    angularVelocity.addScaledVector(temp.copy(up).cross(new THREE.Vector3(0, sign, 0)), dt * 15);
-    if (impact > 0.45) {
-      const localImpulse = temp.set(0, -impact * 0.45, 0).applyQuaternion(inverseRotation.copy(jellyGroup.quaternion).invert());
-      applyImpulseAt(rest[contact], localImpulse, 1.0);
-    }
-    if (ui.autorotate.checked) jellyGroup.rotateY(dt * 0.035);
-  }
-  ground.position.x = jellyGroup.position.x;
-  ground.position.z = jellyGroup.position.z;
-  const height = Math.max(0, jellyGroup.position.y + lowest - floorY);
-  ground.scale.setScalar(1 + height * 0.14);
-  ground.material.opacity = 1 / (1 + height * 0.6);
-}
-const clock = new THREE.Clock();
-resetShape();
-function animate() {
-  const dt = Math.min(clock.getDelta(), 0.05);
-  if (!document.hidden) {
-    accumulator += dt;
-    while (accumulator >= 1 / 120) {
-      updateSoftBody(1 / 120); updateBody(1 / 120); accumulator -= 1 / 120;
-    }
-    uploadSurface();
-    renderer.render(scene, camera);
-  }
+function release(){capturedIndex=-1;body.grab=null;if(activePointer!==null && canvas.hasPointerCapture(activePointer))canvas.releasePointerCapture(activePointer);activePointer=null;canvas.style.cursor='grab';}
+canvas.addEventListener('pointerup',release);canvas.addEventListener('pointercancel',release);canvas.addEventListener('lostpointercapture',release);
+window.addEventListener('blur',release);
+document.addEventListener('visibilitychange',()=>{if(document.hidden){release();accumulator=0;}});
+for(const name of Object.keys(defaults))ui[name].addEventListener('input',syncOutputs);
+ui.nudge.addEventListener('click',()=>{release();body.nudge();});
+ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of Object.keys(defaults))ui[name].value=defaults[name];syncOutputs();ui.autorotate.checked=true;ui.shadowToggle.checked=true;});
+let last=performance.now();
+function animate(now){
   requestAnimationFrame(animate);
+  const dt=Math.min((now-last)/1000,.04);last=now;accumulator+=dt;
+  while(accumulator>=1/120){body.step(1/120,settings);accumulator-=1/120;}
+  // The render skin has more detail than the internal volume mesh.
+  for(let i=0;i<vertexCount;i++){
+    const p=body.sample(skins[i]);current[i].set(...p);
+  }
+  const smooth=settings.smoothing*1.8;
+  for(let i=0;i<vertexCount;i++){
+    const p=current[i];let x=0,y=0,z=0;
+    for(const j of neighbors[i]){x+=current[j].x;y+=current[j].y;z+=current[j].z;}
+    const n=neighbors[i].length;
+    positionAttr.setXYZ(i,p.x*(1-smooth)+x/n*smooth,p.y*(1-smooth)+y/n*smooth,p.z*(1-smooth)+z/n*smooth);
+  }
+  if(body.grab && capturedIndex>=0) positionAttr.setXYZ(capturedIndex,...body.grab.target);
+  positionAttr.needsUpdate=true;jellyGeometry.computeVertexNormals();jellyGeometry.computeBoundingSphere();
+  const center=body.p.reduce((a,p)=>a.add(new THREE.Vector3(...p)),new THREE.Vector3()).multiplyScalar(1/body.p.length);
+  ground.position.x=center.x;ground.position.z=center.z;
+  ground.material.opacity=1/(1+Math.max(0,center.y+.97)*.65);ground.visible=ui.shadowToggle.checked;
+  if(ui.autorotate.checked&&!body.grab){for(let i=0;i<body.p.length;i++){const p=body.p[i],a=dt*.025,x=p[0]-center.x,z=p[2]-center.z;p[0]=center.x+x*Math.cos(a)+z*Math.sin(a);p[2]=center.z+z*Math.cos(a)-x*Math.sin(a);}}
+  renderer.render(scene,camera);
 }
-animate();
+requestAnimationFrame(animate);
