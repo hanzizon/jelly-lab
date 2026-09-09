@@ -19,7 +19,10 @@ function line(x,z,points,width=.026){
 }
 const bangsDJ=[[-.72,-.69],[-.54,-1.03],[.03,-1.12],[.53,-.91],[.73,-.52],[.55,-.18],[.32,-.29],[.12,-.52],[.03,-.15],[-.17,-.34],[-.25,-.62],[-.48,-.26],[-.66,-.08]];
 const bangsVocal=[[-.72,-.47],[-.64,-.92],[-.3,-1.13],[.21,-1.1],[.61,-.87],[.71,-.14],[.5,-.3],[.38,-.63],[.18,-.44],[-.11,-.34],[-.46,-.37],[-.51,-.07]];
+// Rounded face and two ears only; no facial relief on the cat soap shape.
+const catOutline=[[-.98,.04],[-.96,-.22],[-.87,-.46],[-.85,-.86],[-.82,-1.02],[-.76,-1.06],[-.67,-1.02],[-.39,-.78],[-.2,-.81],[0,-.82],[.2,-.81],[.39,-.78],[.67,-1.02],[.76,-1.06],[.82,-1.02],[.85,-.86],[.87,-.46],[.96,-.22],[.98,.04],[.94,.32],[.79,.56],[.55,.73],[.28,.83],[0,.86],[-.28,.83],[-.55,.73],[-.79,.56],[-.94,.32]];
 function silhouette(x,z,kind){
+  if(kind==='cat')return polygon(x,z,catOutline);
   let d=ellipse(x,z,0,-.38,.76,.78);
   if(kind==='vocal'){
     d=Math.min(d,ellipse(x,z,-.57,.31,.23,.64),ellipse(x,z,.57,.31,.23,.64),ellipse(x,z,0,.67,.43,.42),ellipse(x,z,-.23,.99,.25,.2),ellipse(x,z,.23,.99,.25,.2),ellipse(x,z,-.4,-1.09,.29,.15));
@@ -78,6 +81,28 @@ export function characterTone(point,kind){
   light=Math.max(light,f.pupils*.48);
   return {shade:1+(shade-1)*front,light:light*front};
 }
+// Bake a gently sanded height field once per character, not every animation frame.
+const reliefCache=new Map();
+function roundedRelief(kind){
+  if(reliefCache.has(kind))return reliefCache.get(kind);
+  const n=128,extent=1.5,step=extent*2/(n-1),weights=[1,4,6,4,1];
+  let values=new Float32Array(n*n),temp=new Float32Array(n*n);
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++)values[j*n+i]=relief(i*step-extent,j*step-extent,kind);
+  for(const axis of [0,1]){
+    for(let j=0;j<n;j++)for(let i=0;i<n;i++){
+      let h=0;for(let k=-2;k<=2;k++){
+        const x=axis===0?Math.max(0,Math.min(n-1,i+k)):i;
+        const z=axis===1?Math.max(0,Math.min(n-1,j+k)):j;
+        h+=values[z*n+x]*weights[k+2]/16;
+      }temp[j*n+i]=h;
+    }[values,temp]=[temp,values];
+  }
+  const sample=(x,z)=>{
+    const u=Math.max(0,Math.min(n-1.001,(x+extent)/step)),v=Math.max(0,Math.min(n-1.001,(z+extent)/step));
+    const i=Math.floor(u),j=Math.floor(v),a=u-i,b=v-j;
+    return (values[j*n+i]*(1-a)+values[j*n+i+1]*a)*(1-b)+(values[(j+1)*n+i]*(1-a)+values[(j+1)*n+i+1]*a)*b;
+  };reliefCache.set(kind,sample);return sample;
+}
 export function shapeMapper(kind){
   if(kind==='cylinder')return p=>[...p];
   const count=512,radii=[];
@@ -86,13 +111,16 @@ export function shapeMapper(kind){
     for(let j=0;j<18;j++){const mid=(lo+hi)/2;if(silhouette(Math.cos(a)*mid,Math.sin(a)*mid,kind)<0)lo=mid;else hi=mid;}
     radii.push(lo);
   }
-  const rounded=radii.map((v,i)=>{let sum=0,weight=0;for(let k=-5;k<=5;k++){const w=Math.exp(-k*k/10);sum+=radii[(i+k+count)%count]*w;weight+=w;}return sum/weight;});
+  const radius=kind==='cat'?5:12,sigma=kind==='cat'?10:48;
+  const rounded=radii.map((v,i)=>{let sum=0,weight=0;for(let k=-radius;k<=radius;k++){const w=Math.exp(-k*k/sigma);sum+=radii[(i+k+count)%count]*w;weight+=w;}return sum/weight;});
+  const height=kind==='cat'?null:roundedRelief(kind);
   return p=>{
     const r=Math.hypot(p[0],p[2])/1.64,a=Math.atan2(p[2],p[0]);
     const at=((a+Math.PI*2)%(Math.PI*2))/(Math.PI*2)*count,index=Math.floor(at),mix=at-index;
     const lo=rounded[index]*(1-mix)+rounded[(index+1)%count]*mix;
     const x=Math.cos(a)*lo*r,z=Math.sin(a)*lo*r;
-    const dome=.22+.15*Math.sqrt(Math.max(0,1-r*r)),top=dome+relief(x,z,kind);
+    if(kind==='cat')return [x*1.64,p[1],z*1.64];
+    const dome=.22+.15*Math.sqrt(Math.max(0,1-r*r)),top=dome+height(x,z);
     return [x*1.32,-.58+(p[1]+.58)/1.16*(top+.58),z*1.32];
   };
 }

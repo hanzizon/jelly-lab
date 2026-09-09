@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=controls-05";
-import { shapeMapper, characterTone } from "./shapes.js?v=controls-05";
+import { Jelly } from "./physics.js?v=rounded-07";
+import { shapeMapper } from "./shapes.js?v=rounded-07";
 
 const canvas = document.querySelector("#scene");
 const hint = document.querySelector("#hint");
@@ -145,6 +145,7 @@ rearMaterial.onBeforeCompile = shader => {
     'diffuseColor.a = 0.025 + 0.28 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);\n#include <opaque_fragment>');
 };
 const rearMesh=new THREE.Mesh(jellyGeometry,rearMaterial);jellyGroup.add(rearMesh);
+const transmissionTint=new THREE.Color(0x2f6bff);
 const jellyMaterial = new THREE.MeshPhysicalMaterial({
   color:0xffffff, roughness:.012, metalness:0, transmission:0, transparent:true, depthWrite:false,
   thickness:1, ior:1.36, clearcoat:.18, clearcoatRoughness:.025, envMapIntensity:1.15
@@ -154,7 +155,7 @@ jellyMaterial.defines={...jellyMaterial.defines,USE_TRANSMISSION:''};
 jellyMaterial.onBeforeCompile = shader => {
   Object.assign(shader.uniforms,{
     transmission:{value:1},thickness:{value:1},attenuationDistance:{value:2.8},
-    attenuationColor:{value:new THREE.Color(0x2f6bff)},
+    attenuationColor:{value:transmissionTint},
     jellyRear:{value:rearTarget.texture},jellyDepth:{value:rearTarget.depthTexture},
     jellyScreenSize:{value:bufferSize},jellyNear:{value:camera.near},jellyFar:{value:camera.far}
   });
@@ -174,33 +175,20 @@ jellyMaterial.onBeforeCompile=shader=>{
     '#include <opaque_fragment>\ngl_FragColor.a = 0.48 + 0.5 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);');
 };
 jellyMaterial.customProgramCacheKey=()=> 'jelly-clear-film-v3';
-const characterMaterial=new THREE.MeshPhysicalMaterial({
-  color:0xffffff,vertexColors:true,roughness:.26,metalness:0,
-  transmission:.05,thickness:.8,ior:1.35,attenuationDistance:2.4,
-  clearcoat:.35,clearcoatRoughness:.18,envMapIntensity:.65
-});
-const colors=new THREE.Float32BufferAttribute(new Float32Array(vertexCount*3).fill(1),3);
-jellyGeometry.setAttribute('color',colors);
 const jellyMesh=new THREE.Mesh(jellyGeometry,jellyMaterial);jellyGroup.add(jellyMesh);
 const characterColors={vocal:0x162ae3,dj:0x3c458f};
 function updateAppearance(kind,mapper){
-  const isCharacter=kind!=='cylinder';jellyMesh.material=isCharacter?characterMaterial:jellyMaterial;
+  const isCharacter=kind==='vocal'||kind==='dj';
   const base=new THREE.Color(isCharacter?characterColors[kind]:0x2f6bff),white=new THREE.Color(0xffffff);
-  if(isCharacter){
-    characterMaterial.attenuationColor.copy(base);
-    for(let i=0;i<vertexCount;i++){
-      const tone=characterTone(mapper(points[i].toArray()),kind);
-      const color=base.clone().multiplyScalar(tone.shade).lerp(white,tone.light);
-      colors.setXYZ(i,color.r,color.g,color.b);
-    }colors.needsUpdate=true;
-  }
+  transmissionTint.copy(base);rearMaterial.color.copy(base);
   ground.material.color.copy(isCharacter?base.clone().lerp(white,.5):white);
   rim.color.copy(isCharacter?base.clone().lerp(white,.82):new THREE.Color(0xbfd8ff));
   key.intensity=isCharacter?2.1:1.3;
 }
 
-let body = new Jelly();
-let skins = points.map(p => body.skin(p.toArray()));
+const initialMapper=shapeMapper('cat');
+let body = new Jelly(initialMapper);
+let skins = points.map(p => body.skin(p.toArray(),initialMapper(p.toArray())));
 const shapeSelect=document.getElementById('shape');
 function changeShape(){
   release();const mapper=shapeMapper(shapeSelect.value);body=new Jelly(mapper);
@@ -249,9 +237,9 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden){release();
 function updateViewControls(){
   camera.zoom=settings.zoom;camera.lookAt(0,.15-.95*THREE.MathUtils.clamp((settings.zoom-1)/.5,0,1),0);camera.updateProjectionMatrix();
   const b=settings.brightness;
-  jellyMaterial.envMapIntensity=1.15*b;rearMaterial.envMapIntensity=1.3*b;characterMaterial.envMapIntensity=.65*b;
-  for(const mat of [jellyMaterial,rearMaterial,characterMaterial])mat.specularIntensity=b;
-  jellyMaterial.clearcoat=.18*b;rearMaterial.clearcoat=.25*b;characterMaterial.clearcoat=.35*b;
+  jellyMaterial.envMapIntensity=1.15*b;rearMaterial.envMapIntensity=1.3*b;
+  for(const mat of [jellyMaterial,rearMaterial])mat.specularIntensity=b;
+  jellyMaterial.clearcoat=.18*b;rearMaterial.clearcoat=.25*b;
 }
 for(const name of Object.keys(defaults))ui[name].addEventListener('input',()=>{syncOutputs();updateViewControls();});
 ui.nudge.addEventListener('click',()=>{release();body.nudge();});
@@ -294,7 +282,7 @@ function animate(now){
   ground.position.x=center.x;ground.position.z=center.z;
   ground.material.opacity=1/(1+Math.max(0,center.y+.97)*.65);ground.visible=ui.shadowToggle.checked;
   if(ui.autorotate.checked&&!body.grab){for(let i=0;i<body.p.length;i++){const p=body.p[i],a=dt*.025,x=p[0]-center.x,z=p[2]-center.z;p[0]=center.x+x*Math.cos(a)+z*Math.sin(a);p[2]=center.z+z*Math.cos(a)-x*Math.sin(a);}}
-  if(shapeSelect.value==='cylinder'){
+  {
     jellyMesh.visible=false;rearMesh.visible=true;
     renderer.setRenderTarget(rearTarget);renderer.render(scene,camera);
   }
