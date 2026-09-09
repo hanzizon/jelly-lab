@@ -44,18 +44,22 @@ export class Jelly {
   }
   sample(s){return s.offset.map((v,k)=>v+s.ids.reduce((sum,id,i)=>sum+this.p[id][k]*s.weights[i],0));}
   pin(s,target){this.grab={...s,target:[...target]};}
-  nudge(){for(let i=0;i<this.p.length;i++){const p=this.p[i];this.v[i]=[.25,4.3-p[2]*3.8,(p[1]-this.floor-.58)*3.8];}}
+  release(){
+    if(!this.grab)return;this.grab=null;
+    for(const v of this.v){const speed=Math.hypot(...v);if(speed>3.5)for(let k=0;k<3;k++)v[k]*=3.5/speed;}
+  }
+  nudge(){for(let i=0;i<this.p.length;i++){const p=this.p[i];this.v[i]=[.1,3.3-p[2]*2.8,(p[1]-this.floor-.58)*2.8];}}
   step(dt,settings){
     const old=this.p.map(p=>[...p]), mass=settings.mass;
     for(let i=0;i<this.p.length;i++)for(let k=0;k<3;k++){
-      this.v[i][k]*=Math.exp(-.18*dt);
-      if(k===1)this.v[i][k]-=7.5*dt;
+      this.v[i][k]*=Math.exp(-.55*dt);
+      if(k===1)this.v[i][k]-=13.5*dt;
       this.p[i][k]+=this.v[i][k]*dt;
     }
-    const alpha=Math.min(.0015,.001*(.12/settings.firmness)*mass)/(dt*dt);
+    const alpha=(.000055+.0007*(settings.firmness/.4)**2)*mass/(dt*dt);
     for(const e of this.edges)e.lambda=0;
     for(const t of this.tets)t.lambda=0;
-    for(let iteration=0;iteration<5;iteration++){
+    for(let iteration=0;iteration<4;iteration++){
       for(const e of this.edges){
         const a=this.p[e.i],b=this.p[e.j],d=b.map((v,k)=>v-a[k]),len=Math.hypot(...d);
         if(len<1e-8)continue;
@@ -75,7 +79,7 @@ export class Jelly {
         a[0]+=dl*g0x;a[1]+=dl*g0y;a[2]+=dl*g0z;b[0]+=dl*g1x;b[1]+=dl*g1y;b[2]+=dl*g1z;
         c[0]+=dl*g2x;c[1]+=dl*g2y;c[2]+=dl*g2z;d[0]+=dl*g3x;d[1]+=dl*g3y;d[2]+=dl*g3z;
       }
-      for(const p of this.p)p[1]=Math.max(this.floor,p[1]);
+      for(const p of this.p){p[1]=Math.max(this.floor,p[1]);p[0]=Math.max(-3,Math.min(3,p[0]));p[2]=Math.max(-2,Math.min(2,p[2]));}
       if(this.grab){
         const g=this.grab,here=this.sample(g),den=g.weights.reduce((s,w)=>s+w*w,0);
         g.ids.forEach((id,i)=>{for(let k=0;k<3;k++)this.p[id][k]+=(g.target[k]-here[k])*g.weights[i]/den;});
@@ -83,10 +87,10 @@ export class Jelly {
     }
     for(let i=0;i<this.p.length;i++){
       for(let k=0;k<3;k++)this.v[i][k]=(this.p[i][k]-old[i][k])/dt;
-      if(this.p[i][1]<=this.floor+.001){this.v[i][0]*=.94;this.v[i][2]*=.94;this.v[i][1]=Math.max(this.v[i][1],-this.v[i][1]*.25);}
+      if(this.p[i][1]<=this.floor+.001){this.v[i][0]*=.94;this.v[i][2]*=.94;this.v[i][1]=Math.max(this.v[i][1],-this.v[i][1]*.12);}
     }
     // Damp relative motion along springs, preserving flight and rotation.
-    const viscosity=.025+(settings.damping-.75)*.38;
+    const viscosity=1-Math.exp(-(10+(settings.damping-.75)*100)*dt);
     for(const e of this.edges){const d=this.p[e.j].map((v,k)=>v-this.p[e.i][k]),l=Math.hypot(...d);if(l<1e-8)continue;
       const speed=d.reduce((s,v,k)=>s+v/l*(this.v[e.j][k]-this.v[e.i][k]),0)*viscosity;
       for(let k=0;k<3;k++){this.v[e.i][k]+=d[k]/l*speed;this.v[e.j][k]-=d[k]/l*speed;}}

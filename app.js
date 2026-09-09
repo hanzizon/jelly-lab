@@ -1,12 +1,12 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=volume-01";
+import { Jelly } from "./physics.js?v=clear-02";
 import { RGBELoader } from "https://unpkg.com/three@0.167.1/examples/jsm/loaders/RGBELoader.js";
 
 const canvas = document.querySelector("#scene");
 const hint = document.querySelector("#hint");
 const ui = Object.fromEntries(["mass", "firmness", "damping", "smoothing", "massValue", "firmnessValue", "dampingValue", "smoothingValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
-const defaults = { mass: 1.25, firmness: 0.12, damping: 0.90, smoothing: 0.08 };
+const defaults = { mass: 1.25, firmness: 0.06, damping: 0.95, smoothing: 0.08 };
 const settings = { ...defaults };
 function syncOutputs() {
   for (const name of Object.keys(defaults)) {
@@ -17,12 +17,15 @@ function syncOutputs() {
 syncOutputs();
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 700 ? 1.5 : 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 700 ? 1 : 1.25));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xeef2f7);
+const rearTarget = new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+rearTarget.depthTexture = new THREE.DepthTexture(1,1,THREE.UnsignedIntType);
+const bufferSize = new THREE.Vector2();
 const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 80);
 function resizeScene() {
   const { width, height } = canvas.parentElement.getBoundingClientRect();
@@ -32,6 +35,8 @@ function resizeScene() {
   camera.lookAt(0, 0.15, 0);
   camera.updateProjectionMatrix();
   renderer.setSize(width, height);
+  renderer.getDrawingBufferSize(bufferSize);
+  rearTarget.setSize(Math.max(1,Math.round(bufferSize.x*.8)),Math.max(1,Math.round(bufferSize.y*.8)));
 }
 resizeScene();
 window.addEventListener("resize", resizeScene);
@@ -58,10 +63,10 @@ new RGBELoader().load("https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/poly
   scene.environment = hdr.texture; texture.dispose(); environment.dispose(); pmrem.dispose();
 }, undefined, () => pmrem.dispose());
 studio.traverse(object => { if (object.isMesh) { object.geometry.dispose(); object.material.dispose(); } });
-scene.add(new THREE.HemisphereLight(0xe9f3ff, 0x8c98b0, 1.5));
-const key = new THREE.DirectionalLight(0xffffff, 2.4);
+scene.add(new THREE.HemisphereLight(0xe9f3ff, 0x8c98b0, 0.65));
+const key = new THREE.DirectionalLight(0xffffff, 1.3);
 key.position.set(-3, 5, 4); scene.add(key);
-const rim = new THREE.DirectionalLight(0xbfd8ff, 1.5);
+const rim = new THREE.DirectionalLight(0xbfd8ff, 0.8);
 rim.position.set(3, 2, -3); scene.add(rim);
 
 // A feathered contact shadow avoids hard opaque shadow-map silhouettes.
@@ -69,8 +74,8 @@ const shadowCanvas = document.createElement("canvas");
 shadowCanvas.width = shadowCanvas.height = 128;
 const ctx = shadowCanvas.getContext("2d");
 const gradient = ctx.createRadialGradient(64, 64, 3, 64, 64, 64);
-gradient.addColorStop(0, "rgba(34,50,78,0.27)");
-gradient.addColorStop(0.45, "rgba(34,50,78,0.13)");
+gradient.addColorStop(0, "rgba(19,40,92,0.48)");
+gradient.addColorStop(0.45, "rgba(40,68,125,0.20)");
 gradient.addColorStop(1, "rgba(34,50,78,0)");
 ctx.fillStyle = gradient; ctx.fillRect(0, 0, 128, 128);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(6, 4.8),
@@ -115,27 +120,41 @@ for (let i = 0; i < indices.length; i += 3) {
   links[a].add(b).add(c); links[b].add(a).add(c); links[c].add(a).add(b);
 }
 const neighbors = links.map(set => [...set]);
-const jellyMaterial = new THREE.MeshPhysicalMaterial({
-  color: 0xd5e6ff, roughness: 0.035, metalness: 0,
-  transmission: 1, thickness: 3.1, ior: 1.24,
-  opacity: 1, clearcoat: 1, clearcoatRoughness: 0.04,
-  attenuationColor: new THREE.Color(0x2f6bff), attenuationDistance: 1.8,
-  envMapIntensity: 1.0,
+// Render the exit surface first. Standard screen-space transmission omits it.
+const rearMaterial = new THREE.MeshPhysicalMaterial({
+  color:0x2f6bff, roughness:.025, metalness:0, side:THREE.BackSide,
+  transparent:true, opacity:.22, depthWrite:true, envMapIntensity:1.3,
+  clearcoat:.25, clearcoatRoughness:.025
 });
-// Approximate the shorter optical path at the silhouette; keep the rim clear.
-// Pinned to the Three.js r167 transmission chunk used above.
-jellyMaterial.onBeforeCompile = shader => {
-  shader.fragmentShader = shader.fragmentShader.replace(
-    "#include <transmission_fragment>",
-    THREE.ShaderChunk.transmission_fragment.replace("material.thickness = thickness;",
-      "material.thickness = thickness * (0.08 + 0.92 * pow(abs(dot(normal, normalize(vViewPosition))), 1.6));")
-  );
+rearMaterial.onBeforeCompile = shader => {
+  shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
+    'diffuseColor.a = 0.09 + 0.5 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);\n#include <opaque_fragment>');
 };
-jellyMaterial.customProgramCacheKey = () => "jelly-optical-depth-v1";
-const jellyMesh = new THREE.Mesh(jellyGeometry, jellyMaterial);
-jellyGroup.add(jellyMesh);
-jellyGroup.position.y = -0.08;
-
+const rearMesh=new THREE.Mesh(jellyGeometry,rearMaterial);jellyGroup.add(rearMesh);
+const jellyMaterial = new THREE.MeshPhysicalMaterial({
+  color:0xffffff, roughness:.018, metalness:0, transmission:0,
+  thickness:1, ior:1.32, clearcoat:.18, clearcoatRoughness:.025, envMapIntensity:1.15
+});
+// Supply our own transmission buffer, avoiding a redundant built-in scene pass.
+jellyMaterial.defines={...jellyMaterial.defines,USE_TRANSMISSION:''};
+jellyMaterial.onBeforeCompile = shader => {
+  Object.assign(shader.uniforms,{
+    transmission:{value:1},thickness:{value:1},attenuationDistance:{value:2.5},
+    attenuationColor:{value:new THREE.Color(0x2f6bff)},
+    jellyRear:{value:rearTarget.texture},jellyDepth:{value:rearTarget.depthTexture},
+    jellyScreenSize:{value:bufferSize},jellyNear:{value:camera.near},jellyFar:{value:camera.far}
+  });
+  let pars=THREE.ShaderChunk.transmission_pars_fragment
+    .replace('uniform sampler2D transmissionSamplerMap;', 'uniform sampler2D jellyRear;\nuniform sampler2D jellyDepth;\nuniform vec2 jellyScreenSize;\nuniform float jellyNear;\nuniform float jellyFar;')
+    .replace('return textureBicubic( transmissionSamplerMap, fragCoord.xy, lod );','return texture2D(jellyRear, clamp(fragCoord.xy, vec2(0.001), vec2(0.999)));')
+    .replace('vec3 attenuatedColor = transmittance * transmittedLight.rgb;',
+      '#ifdef ENVMAP_TYPE_CUBE_UV\nvec3 throughDirection = refract(-v, n, 1.0 / ior);\nvec3 throughRoom = textureCubeUV(envMap, envMapRotation * throughDirection, roughness).rgb;\ntransmittedLight.rgb = mix(transmittedLight.rgb, throughRoom, 0.42);\n#endif\nvec3 attenuatedColor = transmittance * transmittedLight.rgb;');
+  shader.fragmentShader=shader.fragmentShader.replace('#include <transmission_pars_fragment>',pars)
+    .replace('#include <transmission_fragment>',THREE.ShaderChunk.transmission_fragment.replace('material.thickness = thickness;',
+      'float exitDepth = texture2D(jellyDepth, gl_FragCoord.xy / jellyScreenSize).r;\nfloat exitZ = -perspectiveDepthToViewZ(exitDepth, jellyNear, jellyFar);\nmaterial.thickness = clamp(exitZ - vViewPosition.z, 0.015, 3.8);'));
+};
+jellyMaterial.customProgramCacheKey=()=> 'jelly-rear-refraction-v2';
+const jellyMesh=new THREE.Mesh(jellyGeometry,jellyMaterial);jellyGroup.add(jellyMesh);
 
 const body = new Jelly();
 const skins = points.map(p => body.skin(p.toArray()));
@@ -168,24 +187,26 @@ canvas.addEventListener('pointermove', event => {
   pointerRay(event);
   if(raycaster.ray.intersectPlane(plane,hitPoint)){
     hitPoint.add(dragOffset);
-    hitPoint.x=THREE.MathUtils.clamp(hitPoint.x,-4,4);
-    hitPoint.y=THREE.MathUtils.clamp(hitPoint.y,-1.35,4);
-    hitPoint.z=THREE.MathUtils.clamp(hitPoint.z,-3,3);
+    hitPoint.x=THREE.MathUtils.clamp(hitPoint.x,-2.7,2.7);
+    hitPoint.y=THREE.MathUtils.clamp(hitPoint.y,-1.35,2.5);
+    hitPoint.z=THREE.MathUtils.clamp(hitPoint.z,-1.6,1.6);
     body.grab.target=hitPoint.toArray();
   }
 });
-function release(){capturedIndex=-1;body.grab=null;if(activePointer!==null && canvas.hasPointerCapture(activePointer))canvas.releasePointerCapture(activePointer);activePointer=null;canvas.style.cursor='grab';}
+function release(){capturedIndex=-1;body.release();if(activePointer!==null && canvas.hasPointerCapture(activePointer))canvas.releasePointerCapture(activePointer);activePointer=null;canvas.style.cursor='grab';}
 canvas.addEventListener('pointerup',release);canvas.addEventListener('pointercancel',release);canvas.addEventListener('lostpointercapture',release);
 window.addEventListener('blur',release);
-document.addEventListener('visibilitychange',()=>{if(document.hidden){release();accumulator=0;}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){release();accumulator=0;last=performance.now();}});
 for(const name of Object.keys(defaults))ui[name].addEventListener('input',syncOutputs);
 ui.nudge.addEventListener('click',()=>{release();body.nudge();});
 ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of Object.keys(defaults))ui[name].value=defaults[name];syncOutputs();ui.autorotate.checked=true;ui.shadowToggle.checked=true;});
 let last=performance.now();
 function animate(now){
   requestAnimationFrame(animate);
-  const dt=Math.min((now-last)/1000,.04);last=now;accumulator+=dt;
-  while(accumulator>=1/120){body.step(1/120,settings);accumulator-=1/120;}
+  const dt=Math.max(.0001,Math.min((now-last)/1000,.15));last=now;
+  // Consume ordinary frame time in full, including 15–25 fps frames.
+  const steps=Math.max(1,Math.ceil(dt/(1/90))), stepDt=dt/steps;
+  for(let step=0;step<steps;step++)body.step(stepDt,settings);
   // The render skin has more detail than the internal volume mesh.
   for(let i=0;i<vertexCount;i++){
     const p=body.sample(skins[i]);current[i].set(...p);
@@ -203,6 +224,11 @@ function animate(now){
   ground.position.x=center.x;ground.position.z=center.z;
   ground.material.opacity=1/(1+Math.max(0,center.y+.97)*.65);ground.visible=ui.shadowToggle.checked;
   if(ui.autorotate.checked&&!body.grab){for(let i=0;i<body.p.length;i++){const p=body.p[i],a=dt*.025,x=p[0]-center.x,z=p[2]-center.z;p[0]=center.x+x*Math.cos(a)+z*Math.sin(a);p[2]=center.z+z*Math.cos(a)-x*Math.sin(a);}}
-  renderer.render(scene,camera);
+  jellyMesh.visible=false;rearMesh.visible=true;
+  renderer.setRenderTarget(rearTarget);renderer.render(scene,camera);
+  jellyMesh.visible=true;rearMesh.visible=false;
+  renderer.setRenderTarget(null);renderer.render(scene,camera);
 }
 requestAnimationFrame(animate);
+
+
