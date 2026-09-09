@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=rounded-07";
-import { shapeMapper } from "./shapes.js?v=rounded-07";
+import { Jelly } from "./physics.js?v=recovery-08";
+import { shapeMapper } from "./shapes.js?v=recovery-08";
 
 const canvas = document.querySelector("#scene");
 const hint = document.querySelector("#hint");
@@ -265,16 +265,15 @@ function animate(now){
     for(const j of neighbors[i]){x+=current[j].x;y+=current[j].y;z+=current[j].z;}
     const n=neighbors[i].length;
     let surfaceY=p.y*(1-smooth)+y/n*smooth;
-    if(shapeSelect.value!=='cylinder' && points[i].y<-.579 && !body.grab && Math.abs(p.y-body.floor)<.025)surfaceY=body.floor;
     positionAttr.setXYZ(i,p.x*(1-smooth)+x/n*smooth,surfaceY,p.z*(1-smooth)+z/n*smooth);
   }
-  // Spread the tiny capture correction over a smooth patch, never one needle vertex.
-  if(body.grab && capturedIndex>=0){
-    const anchor=current[capturedIndex],restAnchor=points[capturedIndex];
-    for(let i=0;i<vertexCount;i++){
-      const weight=Math.exp(-points[i].distanceToSquared(restAnchor)/.035);
-      if(weight<.001)continue;
-      positionAttr.setXYZ(i,positionAttr.getX(i)+(body.grab.target[0]-anchor.x)*weight,positionAttr.getY(i)+(body.grab.target[1]-anchor.y)*weight,positionAttr.getZ(i)+(body.grab.target[2]-anchor.z)*weight);
+  // The entire unsculpted back is one plane, including when tilted above the floor.
+  if(!body.grab){
+    const {normal,origin}=body.backPlane();
+    for(let i=0;i<vertexCount;i++)if(points[i].y<-.579){
+      const p=[positionAttr.getX(i),positionAttr.getY(i),positionAttr.getZ(i)];
+      const distance=p.reduce((s,v,k)=>s+(v-origin[k])*normal[k],0);
+      positionAttr.setXYZ(i,...p.map((v,k)=>v-distance*normal[k]));
     }
   }
   positionAttr.needsUpdate=true;jellyGeometry.computeVertexNormals();jellyGeometry.computeBoundingSphere();

@@ -53,7 +53,49 @@ export class Jelly {
   renderSample(s,out){
     for(let k=0;k<3;k++){let v=s.surfacePoint[k];for(let i=0;i<s.smoothIds.length;i++){const id=s.smoothIds[i];v+=(this.p[id][k]-this.rest[id][k])*s.smoothWeights[i];}out[k]=v;}return out;
   }
-  pin(s,target){this.grab={...s,target:[...target]};}
+  pin(s,target){
+    // Constrain exactly the same continuous skin that is drawn on screen.
+    const merged=new Map();s.smoothIds.forEach((id,i)=>merged.set(id,(merged.get(id)||0)+s.smoothWeights[i]));
+    const ids=[...merged.keys()],weights=[...merged.values()];
+    const offset=s.surfacePoint.map((v,k)=>v-ids.reduce((sum,id,i)=>sum+this.rest[id][k]*weights[i],0));
+    this.grab={...s,ids,weights,offset,target:[...target]};
+  }
+  frame(){
+    const center=[0,0,0],restCenter=[0,0,0],n=this.p.length;
+    for(let i=0;i<n;i++)for(let k=0;k<3;k++){center[k]+=this.p[i][k]/n;restCenter[k]+=this.rest[i][k]/n;}
+    let a=Array(9).fill(0);
+    for(let i=0;i<n;i++)for(let r=0;r<3;r++)for(let c=0;c<3;c++)a[r*3+c]+=(this.p[i][r]-center[r])*(this.rest[i][c]-restCenter[c]);
+    const scale=Math.sqrt(a.reduce((s,v)=>s+v*v,0));a=a.map(v=>v/scale);
+    for(let iter=0;iter<12;iter++){
+      const [a0,b,c,d,e,f,g,h,i]=a;
+      const co=[e*i-f*h,f*g-d*i,d*h-e*g,c*h-b*i,a0*i-c*g,b*g-a0*h,b*f-c*e,c*d-a0*f,a0*e-b*d];
+      const det=a0*co[0]+b*co[1]+c*co[2];if(Math.abs(det)<1e-12)break;
+      a=a.map((v,j)=>(v+co[j]/det)*.5);
+    }
+    if(!a.every(Number.isFinite))a=[1,0,0,0,1,0,0,0,1];
+    return {center,restCenter,rotation:a,normal:[a[1],a[4],a[7]]};
+  }
+  recover(dt){
+    if(this.grab)return;
+    const f=this.frame(),rate=1-Math.exp(-8*dt);
+    for(let i=0;i<this.p.length;i++)for(let k=0;k<3;k++){
+      let goal=f.center[k];for(let j=0;j<3;j++)goal+=f.rotation[k*3+j]*(this.rest[i][j]-f.restCenter[j]);
+      this.p[i][k]+=(goal-this.p[i][k])*rate;
+    }
+    if(!this.grab){
+      const origin=[0,0,0];for(let i=0;i<81;i++)for(let k=0;k<3;k++)origin[k]+=this.p[i][k]/81;
+      for(let i=0;i<81;i++){
+        const d=this.p[i].reduce((s,v,k)=>s+(v-origin[k])*f.normal[k],0);
+        for(let k=0;k<3;k++)this.p[i][k]-=d*f.normal[k];
+      }
+      const low=Math.min(...this.p.map(p=>p[1]));if(low<this.floor)for(const p of this.p)p[1]+=this.floor-low;
+    }
+  }
+  backPlane(){
+    const normal=this.frame().normal,origin=[0,0,0];
+    for(let i=0;i<81;i++)for(let k=0;k<3;k++)origin[k]+=this.p[i][k]/81;
+    return {normal,origin};
+  }
   release(){
     if(!this.grab)return;this.grab=null;
     for(const v of this.v){const speed=Math.hypot(...v);if(speed>3.5)for(let k=0;k<3;k++)v[k]*=3.5/speed;}
@@ -95,6 +137,7 @@ export class Jelly {
         g.ids.forEach((id,i)=>{for(let k=0;k<3;k++)this.p[id][k]+=(g.target[k]-here[k])*g.weights[i]/den;});
       }
     }
+    this.recover(dt);
     for(let i=0;i<this.p.length;i++){
       for(let k=0;k<3;k++)this.v[i][k]=(this.p[i][k]-old[i][k])/dt;
       if(this.p[i][1]<=this.floor+.001){this.v[i][0]*=.94;this.v[i][2]*=.94;this.v[i][1]=Math.max(this.v[i][1],-this.v[i][1]*.12);}
