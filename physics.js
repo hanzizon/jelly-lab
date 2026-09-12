@@ -29,7 +29,7 @@ export class Jelly {
     const u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]),w=d.map((v,k)=>v-a[k]);
     return (u[0]*(v[1]*w[2]-v[2]*w[1])+u[1]*(v[2]*w[0]-v[0]*w[2])+u[2]*(v[0]*w[1]-v[1]*w[0]))/6;
   }
-  reset(){this.p=this.rest.map(p=>[p[0],p[1]+this.floor+.59,p[2]]);this.v=this.p.map(()=>[0,0,0]);this.grab=null;this.renderRotation=[1,0,0,0,1,0,0,0,1];}
+  reset(){this.p=this.rest.map(p=>[p[0],p[1]+this.floor+.59,p[2]]);this.v=this.p.map(()=>[0,0,0]);this.grab=null;this.renderRotation=[1,0,0,0,1,0,0,0,1];this.releaseAge=0;this.renderP=null;}
   skin(point, surfacePoint=point) {
     const x=point[0]/1.64,z=point[2]/1.64;
     const inv=(a,b)=>Math.sign(a)*Math.sqrt(Math.max(0,((2+a*a-b*b)-Math.sqrt(Math.max(0,(2+a*a-b*b)**2-8*a*a)))/2));
@@ -41,7 +41,8 @@ export class Jelly {
       weights.push((x?f[0]:1-f[0])*(y?f[1]:1-f[1])*(z?f[2]:1-f[2]));
     }
     const offset=surfacePoint.map((v,k)=>v-ids.reduce((s,id,i)=>s+this.rest[id][k]*weights[i],0));
-    const cubic=(t)=>[-.5*t+t*t-.5*t*t*t,1-2.5*t*t+1.5*t*t*t,.5*t+2*t*t-1.5*t*t*t,-.5*t*t+.5*t*t*t];
+    // Positive cubic weights avoid overshooting and creasing around a pinch.
+    const cubic=(t)=>[(1-t)**3/6,(3*t*t*t-6*t*t+4)/6,(-3*t*t*t+3*t*t+3*t+1)/6,t*t*t/6];
     const w=g.map((v,k)=>cubic(v-base[k])), smoothIds=[],smoothWeights=[];
     for(let y=0;y<4;y++)for(let z=0;z<4;z++)for(let x=0;x<4;x++){
       const ix=Math.max(0,Math.min(8,base[0]+x-1)),iy=Math.max(0,Math.min(4,base[1]+y-1)),iz=Math.max(0,Math.min(8,base[2]+z-1));
@@ -53,15 +54,28 @@ export class Jelly {
     return {ids,weights,offset,smoothIds:renderIds,smoothWeights:renderWeights,surfacePoint,localOffset};
   }
   sample(s){return s.offset.map((v,k)=>v+s.ids.reduce((sum,id,i)=>sum+this.p[id][k]*s.weights[i],0));}
-  prepareRender(){if(!this.grab)this.renderRotation=this.frame().rotation;}
+  prepareRender(){
+    if(this.grab){this.renderP=this.p;return;}
+    const f=this.frame();this.renderRotation=f.rotation;
+    // The solver's gravity-loaded rest strain must not become a permanent dent.
+    // Relax the visible strain continuously, preserving translation and rotation.
+    const strain=Math.exp(-Math.pow(this.releaseAge/.35,2));
+    this.renderP=this.p.map((p,i)=>p.map((v,k)=>{
+      let rest=f.center[k];for(let j=0;j<3;j++)rest+=f.rotation[k*3+j]*(this.rest[i][j]-f.restCenter[j]);
+      return rest+(v-rest)*strain;
+    }));
+  }
   renderSample(s,out){
     const r=this.renderRotation||[1,0,0,0,1,0,0,0,1];
     for(let k=0;k<3;k++){
       let v=0;for(let j=0;j<3;j++)v+=r[k*3+j]*s.localOffset[j];
-      for(let i=0;i<s.smoothIds.length;i++)v+=this.p[s.smoothIds[i]][k]*s.smoothWeights[i];out[k]=v;
+      for(let i=0;i<s.smoothIds.length;i++)v+=(this.renderP||this.p)[s.smoothIds[i]][k]*s.smoothWeights[i];out[k]=v;
     }return out;
   }
   pin(s,target){
+    // Re-grabbing starts from the visible body, so no hidden strain pops back.
+    if(this.renderP&&this.renderP!==this.p)this.p=this.renderP.map(p=>[...p]);
+    this.renderP=this.p;this.releaseAge=0;
     // Constrain exactly the same continuous skin that is drawn on screen.
     const merged=new Map();s.smoothIds.forEach((id,i)=>merged.set(id,(merged.get(id)||0)+s.smoothWeights[i]));
     const ids=[...merged.keys()],weights=[...merged.values()];
@@ -98,15 +112,21 @@ export class Jelly {
   }
   backPlane(){
     const normal=this.frame().normal,origin=[0,0,0];
-    for(let i=0;i<81;i++)for(let k=0;k<3;k++)origin[k]+=this.p[i][k]/81;
+    for(let i=0;i<81;i++)for(let k=0;k<3;k++)origin[k]+=(this.renderP||this.p)[i][k]/81;
     return {normal,origin};
   }
   release(){
-    if(!this.grab)return;this.grab=null;
+    if(!this.grab)return;this.grab=null;this.releaseAge=0;
     for(const v of this.v){const speed=Math.hypot(...v);if(speed>3.5)for(let k=0;k<3;k++)v[k]*=3.5/speed;}
   }
-  nudge(){for(let i=0;i<this.p.length;i++){const p=this.p[i];this.v[i]=[.1,3.3-p[2]*2.8,(p[1]-this.floor-.58)*2.8];}}
+  nudge(){this.releaseAge=0;for(let i=0;i<this.p.length;i++){const p=this.p[i];this.v[i]=[.1,3.3-p[2]*2.8,(p[1]-this.floor-.58)*2.8];}}
   step(dt,settings){
+    if(!this.grab)this.releaseAge+=dt;
+    else {
+      this.renderRotation=this.frame().rotation;
+      const r=this.renderRotation;
+      this.grab.offset=[0,1,2].map(k=>this.grab.localOffset.reduce((sum,v,j)=>sum+r[k*3+j]*v,0));
+    }
     const old=this.p.map(p=>[...p]), mass=settings.mass;
     for(let i=0;i<this.p.length;i++)for(let k=0;k<3;k++){
       this.v[i][k]*=Math.exp(-.55*dt);

@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=flight-09";
-import { shapeMapper } from "./shapes.js?v=flight-09";
+import { Jelly } from "./physics.js?v=rest-10";
+import { shapeMapper } from "./shapes.js?v=rest-10";
 
 const canvas = document.querySelector("#scene");
 const hint = document.querySelector("#hint");
@@ -273,7 +273,7 @@ function animate(now){
     const {normal,origin}=body.backPlane();
     for(let i=0;i<vertexCount;i++)if(points[i].y<-.579){
       const p=[positionAttr.getX(i),positionAttr.getY(i),positionAttr.getZ(i)];
-      const distance=p.reduce((s,v,k)=>s+(v-origin[k])*normal[k],0);
+      const distance=p.reduce((s,v,k)=>s+(v-origin[k])*normal[k],0)*(1-Math.exp(-Math.pow(body.releaseAge/.12,2)));
       positionAttr.setXYZ(i,...p.map((v,k)=>v-distance*normal[k]));
     }
   }
