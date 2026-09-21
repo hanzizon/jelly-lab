@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=stretch-13";
-import { shapeMapper } from "./shapes.js?v=stretch-13";
+import { Jelly } from "./physics.js?v=held-wobble-16";
+import { shapeMapper } from "./shapes.js?v=held-wobble-16";
 
 const canvas = document.querySelector("#scene");
 
@@ -251,9 +251,8 @@ canvas.addEventListener('pointermove', event => {
   pointerRay(event);
   if(raycaster.ray.intersectPlane(plane,hitPoint)){
     hitPoint.add(dragOffset);
-    hitPoint.x=THREE.MathUtils.clamp(hitPoint.x,-2.7,2.7);
-    hitPoint.y=THREE.MathUtils.clamp(hitPoint.y,-1.35,2.5);
-    hitPoint.z=THREE.MathUtils.clamp(hitPoint.z,-1.6,1.6);
+    // Follow the pointer continuously; a world-space ceiling made a stretched
+    // jelly stop following the hand. The solver limits strain, not hand position.
     body.grab.desired=hitPoint.toArray();
   }
 });

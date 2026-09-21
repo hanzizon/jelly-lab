@@ -163,7 +163,7 @@ export class Jelly {
         a[0]+=dl*g0x;a[1]+=dl*g0y;a[2]+=dl*g0z;b[0]+=dl*g1x;b[1]+=dl*g1y;b[2]+=dl*g1z;
         c[0]+=dl*g2x;c[1]+=dl*g2y;c[2]+=dl*g2z;d[0]+=dl*g3x;d[1]+=dl*g3y;d[2]+=dl*g3z;
       }
-      for(const p of this.p){p[1]=Math.max(this.floor,p[1]);p[0]=Math.max(-3,Math.min(3,p[0]));p[2]=Math.max(-2,Math.min(2,p[2]));}
+      for(const p of this.p)p[1]=Math.max(this.floor,p[1]);
       if(this.grab){
         const g=this.grab,here=this.sample(g),den=g.weights.reduce((s,w)=>s+w*w,0);
         g.ids.forEach((id,i)=>{for(let k=0;k<3;k++)this.p[id][k]+=(g.target[k]-here[k])*g.weights[i]/den;});
@@ -172,6 +172,26 @@ export class Jelly {
     // Backtrack an excessive held deformation instead of letting cells fold
     // inside out. This bounds fast pointer jumps without retaining a crease.
     if(this.grab){
+      // Repair compressed cells locally first. Freezing the entire deformation
+      // for one compressed cell also froze the dangling body's natural wobble.
+      for(let pass=0;pass<6;pass++){
+        let repaired=false;
+        for(const t of this.tets){
+          const volume=this.volume(t.q),minimum=t.volume*.12;
+          if(t.volume<=1e-7||volume>=minimum)continue;
+          const [a,b,c,d]=t.q.map(i=>this.p[i]);
+          const sub=(p,q)=>p.map((v,k)=>v-q[k]);
+          const cross=(u,v)=>[(u[1]*v[2]-u[2]*v[1])/6,(u[2]*v[0]-u[0]*v[2])/6,(u[0]*v[1]-u[1]*v[0])/6];
+          const u=sub(b,a),v=sub(c,a),w=sub(d,a);
+          const g1=cross(v,w),g2=cross(w,u),g3=cross(u,v),g0=g1.map((v,k)=>-v-g2[k]-g3[k]);
+          const gradients=[g0,g1,g2,g3],den=gradients.reduce((s,g)=>s+g.reduce((s,v)=>s+v*v,0),0);
+          if(den<1e-16)continue;
+          const correction=(minimum-volume)/den;
+          t.q.forEach((id,j)=>{for(let k=0;k<3;k++)this.p[id][k]+=gradients[j][k]*correction;});
+          repaired=true;
+        }
+        if(!repaired)break;
+      }
       for(let attempt=0;attempt<8;attempt++){
         let folded=false;
         for(const t of this.tets)if(t.volume>1e-7&&this.volume(t.q)<t.volume*.08){folded=true;break;}
@@ -184,13 +204,28 @@ export class Jelly {
       const shift=this.grab.target.map((v,k)=>v-here[k]);
       for(const p of this.p)for(let k=0;k<3;k++)p[k]+=shift[k];
     }
+    // Shape recovery is a geometric relaxation, not a fresh physical impulse.
+    // Derive velocity before it so rebuilding the resting shape cannot launch it.
+    for(let i=0;i<this.p.length;i++)for(let k=0;k<3;k++)this.v[i][k]=(this.p[i][k]-old[i][k])/dt;
     this.recover(dt);
     for(let i=0;i<this.p.length;i++){
-      for(let k=0;k<3;k++)this.v[i][k]=(this.p[i][k]-old[i][k])/dt;
       if(this.p[i][1]<=this.floor+.001){const friction=Math.exp(-(8+5*mass)*dt);this.v[i][0]*=friction;this.v[i][2]*=friction;this.v[i][1]=Math.max(this.v[i][1],-this.v[i][1]*(.12/(.5+mass)));}
     }
+    if(!this.grab){
+      const contact=this.p.reduce((n,p)=>n+(p[1]<=this.floor+.015),0)/this.p.length;
+      if(contact>0){
+        const mean=this.v.reduce((sum,v)=>sum+v[1],0)/this.v.length;
+        // Dissipate bulk rebound at contact while retaining local jelly wobble.
+        const rebound=Math.max(0,mean)*(1-Math.exp(-contact*(90+30*mass)*dt));
+        const friction=Math.exp(-contact*(12+8*mass)*dt);
+        for(const v of this.v){v[1]-=rebound;v[0]*=friction;v[2]*=friction;}
+      }
+    }
     // Damp relative motion along springs, preserving flight and rotation.
-    const viscosity=1-Math.exp(-(10+(settings.damping-.75)*100)*dt);
+    // While held, keep the free body underdamped so hand motion travels through
+    // the stretched neck instead of being erased in the same solver step.
+    const dampingRate=this.grab?3.5+mass:10+(settings.damping-.75)*100;
+    const viscosity=1-Math.exp(-dampingRate*dt);
     for(const e of this.edges){const d=this.p[e.j].map((v,k)=>v-this.p[e.i][k]),l=Math.hypot(...d);if(l<1e-8)continue;
       const speed=d.reduce((s,v,k)=>s+v/l*(this.v[e.j][k]-this.v[e.i][k]),0)*viscosity;
       for(let k=0;k<3;k++){this.v[e.i][k]+=d[k]/l*speed;this.v[e.j][k]-=d[k]/l*speed;}}
