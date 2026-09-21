@@ -230,6 +230,7 @@ function pointerRay(event) {
   raycaster.setFromCamera(pointer,camera);
 }
 canvas.addEventListener('pointerdown', event => {
+  if(event.pointerType==='mouse'&&event.button!==0)return;
   if(activePointer !== null) return;
   pointerRay(event);
   const hit = raycaster.intersectObject(jellyMesh)[0];
@@ -245,6 +246,8 @@ canvas.addEventListener('pointerdown', event => {
 });
 canvas.addEventListener('pointermove', event => {
   if(event.pointerId !== activePointer)return;
+  // Recover even when the browser missed pointerup while leaving the canvas.
+  if(event.pointerType==='mouse'&&event.buttons===0){release();return;}
   pointerRay(event);
   if(raycaster.ray.intersectPlane(plane,hitPoint)){
     hitPoint.add(dragOffset);
@@ -254,8 +257,19 @@ canvas.addEventListener('pointermove', event => {
     body.grab.desired=hitPoint.toArray();
   }
 });
-function release(){capturedIndex=-1;body.release();if(activePointer!==null && canvas.hasPointerCapture(activePointer))canvas.releasePointerCapture(activePointer);activePointer=null;canvas.style.cursor='grab';}
-canvas.addEventListener('pointerup',release);canvas.addEventListener('pointercancel',release);canvas.addEventListener('lostpointercapture',release);
+function release(){
+  const pointerId=activePointer;
+  activePointer=null;capturedIndex=-1;body.release();canvas.style.cursor='grab';
+  // Clear state first: releasing capture can synchronously dispatch capture loss.
+  if(pointerId!==null&&canvas.hasPointerCapture(pointerId))canvas.releasePointerCapture(pointerId);
+}
+function endPointer(event){if(event.pointerId===activePointer)release();}
+canvas.addEventListener('pointerup',endPointer);canvas.addEventListener('pointercancel',endPointer);canvas.addEventListener('lostpointercapture',endPointer);
+window.addEventListener('pointerup',endPointer,true);
+window.addEventListener('pointercancel',endPointer,true);
+window.addEventListener('mouseup',()=>{if(activePointer!==null)release();},true);
+window.addEventListener('touchend',event=>{if(event.touches.length===0)release();},{capture:true,passive:true});
+window.addEventListener('touchcancel',release,{capture:true,passive:true});
 window.addEventListener('blur',release);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){release();accumulator=0;last=performance.now();}});
 function updateViewControls(){

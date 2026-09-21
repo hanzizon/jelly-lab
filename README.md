@@ -86,3 +86,9 @@ GitHub Pages는 main 루트에서 자동 배포합니다. 수정 시 index.html�
 - 내부 격자가 뒤집히려는 변형은 이전 안전한 상태 쪽으로 제한합니다. 한계를 넘는 당김에서는 잡은 지점이 떨어지지 않도록 몸통을 함께 이동합니다.
 - `node tests/stretch.mjs`는 늘어남, 내부 격자 뒤집힘, 놓은 뒤 표면 복원을 검증합니다. `tests/recovery.mjs`와 입력 테스트도 통과했습니다.
 - 화면 해상도와 FXAA는 유지합니다. Chrome 프레임은 실행 환경에 따라 편차가 있어 60fps를 보장하지 않습니다.
+
+## 드래그 해제 보완 (release-14)
+- 캔버스 밖의 pointerup/pointercancel, mouseup, touchend/touchcancel도 해제합니다.
+- 버튼을 떼었는데 pointerup을 놓친 경우 다음 마우스 이동에서 복구합니다.
+- 포인터 캡처 해제 전에 잡힘 상태부터 정리하여 중복 이벤트에도 안전하게 처리합니다.
+- 세 모양에 대해 각 해제 경로를 검증했으며 실제 Chrome 마우스 드래그 후 추가 클릭 없이 grab=false를 확인했습니다.
