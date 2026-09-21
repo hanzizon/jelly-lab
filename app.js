@@ -1,10 +1,10 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=chrome-aa-12";
-import { shapeMapper } from "./shapes.js?v=chrome-aa-12";
+import { Jelly } from "./physics.js?v=stretch-13";
+import { shapeMapper } from "./shapes.js?v=stretch-13";
 
 const canvas = document.querySelector("#scene");
-const hint = document.querySelector("#hint");
+
 const ui = Object.fromEntries(["mass", "firmness", "brightness", "zoom", "massValue", "firmnessValue", "brightnessValue", "zoomValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
 const defaults = { mass: 1.25, firmness: 0.06, brightness: 1, zoom: 1 };
 const settings = { ...defaults, damping: .95 };
@@ -241,7 +241,7 @@ canvas.addEventListener('pointerdown', event => {
   dragOffset.copy(captured).sub(hit.point);
   capturedIndex=index; body.pin(skins[index],captured.toArray());
   activePointer=event.pointerId; canvas.setPointerCapture(activePointer);
-  hint.classList.add('hidden'); canvas.style.cursor='grabbing';
+  canvas.style.cursor='grabbing';
 });
 canvas.addEventListener('pointermove', event => {
   if(event.pointerId !== activePointer)return;

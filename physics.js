@@ -25,9 +25,9 @@ export class Jelly {
     this.reset();
   }
   volume(q,p=this.p) {
-    const [a,b,c,d]=q.map(i=>p[i]);
-    const u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]),w=d.map((v,k)=>v-a[k]);
-    return (u[0]*(v[1]*w[2]-v[2]*w[1])+u[1]*(v[2]*w[0]-v[0]*w[2])+u[2]*(v[0]*w[1]-v[1]*w[0]))/6;
+    const a=p[q[0]],b=p[q[1]],c=p[q[2]],d=p[q[3]];
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2],wx=d[0]-a[0],wy=d[1]-a[1],wz=d[2]-a[2];
+    return (ux*(vy*wz-vz*wy)+uy*(vz*wx-vx*wz)+uz*(vx*wy-vy*wx))/6;
   }
   reset(){this.p=this.rest.map(p=>[p[0],p[1]+this.floor+.59,p[2]]);this.v=this.p.map(()=>[0,0,0]);this.grab=null;this.renderRotation=[1,0,0,0,1,0,0,0,1];this.releaseAge=0;this.renderP=null;}
   skin(point, surfacePoint=point) {
@@ -82,6 +82,11 @@ export class Jelly {
     const r=this.renderRotation||[1,0,0,0,1,0,0,0,1];
     const offset=[0,1,2].map(k=>s.localOffset.reduce((sum,v,j)=>sum+r[k*3+j]*v,0));
     this.grab={...s,ids,weights,offset,target:[...target]};
+    // Smooth local compliance lets the neck stretch without a hard seam.
+    for(const e of this.edges){
+      const d2=this.rest[e.i].reduce((sum,v,k)=>sum+((v+this.rest[e.j][k])*.5-s.surfacePoint[k])**2,0);
+      e.pinchCompliance=1+3*Math.exp(-d2/1.2);
+    }
   }
   frame(){
     const center=[0,0,0],restCenter=[0,0,0],n=this.p.length;
@@ -131,7 +136,7 @@ export class Jelly {
     const old=this.p.map(p=>[...p]), mass=settings.mass;this.mass=mass;
     for(let i=0;i<this.p.length;i++)for(let k=0;k<3;k++){
       this.v[i][k]*=Math.exp(-.55*dt);
-      if(k===1)this.v[i][k]-=18*dt;
+      if(k===1)this.v[i][k]-=18*(this.grab?2.4+1.2*mass:1)*dt;
       this.p[i][k]+=this.v[i][k]*dt;
     }
     const alpha=(.000055+.0007*(settings.firmness/.4)**2)/(Math.sqrt(.75+mass*.4)*dt*dt);
@@ -141,7 +146,8 @@ export class Jelly {
       for(const e of this.edges){
         const a=this.p[e.i],b=this.p[e.j],d=b.map((v,k)=>v-a[k]),len=Math.hypot(...d);
         if(len<1e-8)continue;
-        const dl=(-(len-e.length)-alpha*e.lambda)/(2+alpha);e.lambda+=dl;
+        const compliance=alpha*(this.grab?e.pinchCompliance:1);
+        const dl=(-(len-e.length)-compliance*e.lambda)/(2+compliance);e.lambda+=dl;
         for(let k=0;k<3;k++){const c=dl*d[k]/len;a[k]-=c;b[k]+=c;}
       }
       for(const t of this.tets){
@@ -162,6 +168,21 @@ export class Jelly {
         const g=this.grab,here=this.sample(g),den=g.weights.reduce((s,w)=>s+w*w,0);
         g.ids.forEach((id,i)=>{for(let k=0;k<3;k++)this.p[id][k]+=(g.target[k]-here[k])*g.weights[i]/den;});
       }
+    }
+    // Backtrack an excessive held deformation instead of letting cells fold
+    // inside out. This bounds fast pointer jumps without retaining a crease.
+    if(this.grab){
+      for(let attempt=0;attempt<8;attempt++){
+        let folded=false;
+        for(const t of this.tets)if(t.volume>1e-7&&this.volume(t.q)<t.volume*.08){folded=true;break;}
+        if(!folded)break;
+        for(let i=0;i<this.p.length;i++)for(let k=0;k<3;k++)this.p[i][k]=(this.p[i][k]+old[i][k])*.5;
+      }
+      // At the stretch limit carry the body with the pointer rather than
+      // detaching the visible pinch. Translation preserves the safe volume.
+      const here=this.sample(this.grab);
+      const shift=this.grab.target.map((v,k)=>v-here[k]);
+      for(const p of this.p)for(let k=0;k<3;k++)p[k]+=shift[k];
     }
     this.recover(dt);
     for(let i=0;i<this.p.length;i++){
