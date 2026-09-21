@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=held-wobble-16";
-import { shapeMapper } from "./shapes.js?v=held-wobble-16";
+import { Jelly } from "./physics.js?v=floor-press-17";
+import { shapeMapper } from "./shapes.js?v=floor-press-17";
 
 const canvas = document.querySelector("#scene");
 

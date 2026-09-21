@@ -81,7 +81,8 @@ export class Jelly {
     const ids=[...merged.keys()],weights=[...merged.values()];
     const r=this.renderRotation||[1,0,0,0,1,0,0,0,1];
     const offset=[0,1,2].map(k=>s.localOffset.reduce((sum,v,j)=>sum+r[k*3+j]*v,0));
-    this.grab={...s,ids,weights,offset,target:[...target]};
+    const onFloor=Math.min(...this.p.map(p=>p[1]))<this.floor+.08;
+    this.grab={...s,ids,weights,offset,target:[...target],minimumY:onFloor?Math.max(this.floor+.025,target[1]-.3):this.floor+.025};
     // Smooth local compliance lets the neck stretch without a hard seam.
     for(const e of this.edges){
       const d2=this.rest[e.i].reduce((sum,v,k)=>sum+((v+this.rest[e.j][k])*.5-s.surfacePoint[k])**2,0);
@@ -124,11 +125,15 @@ export class Jelly {
     if(!this.grab)return;this.grab=null;this.releaseAge=0;
     const cap=3.2/Math.sqrt(.5+(this.mass||1.25));
     for(const v of this.v){const speed=Math.hypot(...v);if(speed>cap)for(let k=0;k<3;k++)v[k]*=cap/speed;}
+    const lift=this.v.reduce((sum,v)=>sum+v[1],0)/this.v.length;
+    if(lift>.6)for(const v of this.v)v[1]-=lift-.6;
   }
   nudge(mass=this.mass||1.25){this.releaseAge=0;const impulse=1/(.5+mass);for(let i=0;i<this.p.length;i++){const p=this.p[i];this.v[i]=[.1*impulse,(3.3-p[2]*2.8)*impulse,(p[1]-this.floor-.58)*2.8*impulse];}}
   step(dt,settings){
     if(!this.grab)this.releaseAge+=dt;
     else {
+      // The held point cannot pull matter through the solid floor.
+      this.grab.target[1]=Math.max(this.grab.minimumY,this.grab.target[1]);
       this.renderRotation=this.frame().rotation;
       const r=this.renderRotation;
       this.grab.offset=[0,1,2].map(k=>this.grab.localOffset.reduce((sum,v,j)=>sum+r[k*3+j]*v,0));
@@ -203,6 +208,8 @@ export class Jelly {
       const here=this.sample(this.grab);
       const shift=this.grab.target.map((v,k)=>v-here[k]);
       for(const p of this.p)for(let k=0;k<3;k++)p[k]+=shift[k];
+      // Safe-strain translation must obey contact too, especially on a down-pull.
+      for(const p of this.p)p[1]=Math.max(this.floor,p[1]);
     }
     // Shape recovery is a geometric relaxation, not a fresh physical impulse.
     // Derive velocity before it so rebuilding the resting shape cannot launch it.
