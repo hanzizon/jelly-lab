@@ -117,9 +117,10 @@ export class Jelly {
   }
   release(){
     if(!this.grab)return;this.grab=null;this.releaseAge=0;
-    for(const v of this.v){const speed=Math.hypot(...v);if(speed>3.5)for(let k=0;k<3;k++)v[k]*=3.5/speed;}
+    const cap=3.2/Math.sqrt(.5+(this.mass||1.25));
+    for(const v of this.v){const speed=Math.hypot(...v);if(speed>cap)for(let k=0;k<3;k++)v[k]*=cap/speed;}
   }
-  nudge(){this.releaseAge=0;for(let i=0;i<this.p.length;i++){const p=this.p[i];this.v[i]=[.1,3.3-p[2]*2.8,(p[1]-this.floor-.58)*2.8];}}
+  nudge(mass=this.mass||1.25){this.releaseAge=0;const impulse=1/(.5+mass);for(let i=0;i<this.p.length;i++){const p=this.p[i];this.v[i]=[.1*impulse,(3.3-p[2]*2.8)*impulse,(p[1]-this.floor-.58)*2.8*impulse];}}
   step(dt,settings){
     if(!this.grab)this.releaseAge+=dt;
     else {
@@ -127,13 +128,13 @@ export class Jelly {
       const r=this.renderRotation;
       this.grab.offset=[0,1,2].map(k=>this.grab.localOffset.reduce((sum,v,j)=>sum+r[k*3+j]*v,0));
     }
-    const old=this.p.map(p=>[...p]), mass=settings.mass;
+    const old=this.p.map(p=>[...p]), mass=settings.mass;this.mass=mass;
     for(let i=0;i<this.p.length;i++)for(let k=0;k<3;k++){
       this.v[i][k]*=Math.exp(-.55*dt);
-      if(k===1)this.v[i][k]-=13.5*dt;
+      if(k===1)this.v[i][k]-=18*dt;
       this.p[i][k]+=this.v[i][k]*dt;
     }
-    const alpha=(.000055+.0007*(settings.firmness/.4)**2)*mass/(dt*dt);
+    const alpha=(.000055+.0007*(settings.firmness/.4)**2)/(Math.sqrt(.75+mass*.4)*dt*dt);
     for(const e of this.edges)e.lambda=0;
     for(const t of this.tets)t.lambda=0;
     for(let iteration=0;iteration<4;iteration++){
@@ -165,7 +166,7 @@ export class Jelly {
     this.recover(dt);
     for(let i=0;i<this.p.length;i++){
       for(let k=0;k<3;k++)this.v[i][k]=(this.p[i][k]-old[i][k])/dt;
-      if(this.p[i][1]<=this.floor+.001){this.v[i][0]*=.94;this.v[i][2]*=.94;this.v[i][1]=Math.max(this.v[i][1],-this.v[i][1]*.12);}
+      if(this.p[i][1]<=this.floor+.001){const friction=Math.exp(-(8+5*mass)*dt);this.v[i][0]*=friction;this.v[i][2]*=friction;this.v[i][1]=Math.max(this.v[i][1],-this.v[i][1]*(.12/(.5+mass)));}
     }
     // Damp relative motion along springs, preserving flight and rotation.
     const viscosity=1-Math.exp(-(10+(settings.damping-.75)*100)*dt);

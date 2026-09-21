@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=rest-10";
-import { shapeMapper } from "./shapes.js?v=rest-10";
+import { Jelly } from "./physics.js?v=chrome-aa-12";
+import { shapeMapper } from "./shapes.js?v=chrome-aa-12";
 
 const canvas = document.querySelector("#scene");
 const hint = document.querySelector("#hint");
@@ -16,17 +16,40 @@ function syncOutputs() {
 }
 syncOutputs();
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(2,Math.max(1.5,window.devicePixelRatio)));
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
+const renderScale=Math.max(1,Math.min(1.5,window.devicePixelRatio||1));
+let refractionScale=.65;
+renderer.setPixelRatio(renderScale);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xeef2f7);
 const rearTarget = new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
-rearTarget.samples = 4;
+rearTarget.samples = 2;
 rearTarget.depthTexture = new THREE.DepthTexture(1,1,THREE.UnsignedIntType);
 const bufferSize = new THREE.Vector2();
+const frontTarget=new THREE.WebGLRenderTarget(1,1,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+frontTarget.texture.colorSpace=THREE.SRGBColorSpace;
+const outputScene=new THREE.Scene(),outputCamera=new THREE.Camera();
+const outputMaterial=new THREE.ShaderMaterial({
+  uniforms:{source:{value:frontTarget.texture},resolution:{value:bufferSize}},depthTest:false,depthWrite:false,toneMapped:false,
+  vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}',
+  fragmentShader:`uniform sampler2D source;uniform vec2 resolution;varying vec2 vUv;
+  void main(){
+    vec2 px=1.0/resolution;vec3 luma=vec3(.299,.587,.114);
+    vec3 c=texture2D(source,vUv).rgb;
+    float m=dot(c,luma),nw=dot(texture2D(source,vUv+vec2(-1.,1.)*px).rgb,luma),ne=dot(texture2D(source,vUv+px).rgb,luma),sw=dot(texture2D(source,vUv-px).rgb,luma),se=dot(texture2D(source,vUv+vec2(1.,-1.)*px).rgb,luma);
+    float lo=min(m,min(min(nw,ne),min(sw,se))),hi=max(m,max(max(nw,ne),max(sw,se)));
+    if(hi-lo<max(.006,hi*.04)){gl_FragColor=linearToOutputTexel(vec4(c,1.));return;}
+    vec2 dir=vec2(-((nw+ne)-(sw+se)),(nw+sw)-(ne+se));
+    float reduce=max((nw+ne+sw+se)*.03125,.0078125);
+    dir=clamp(dir/(min(abs(dir.x),abs(dir.y))+reduce),vec2(-8.),vec2(8.))*px;
+    vec3 a=.5*(texture2D(source,vUv-dir/6.).rgb+texture2D(source,vUv+dir/6.).rgb);
+    vec3 b=a*.5+.25*(texture2D(source,vUv-dir*.5).rgb+texture2D(source,vUv+dir*.5).rgb);
+    float lb=dot(b,luma);gl_FragColor=linearToOutputTexel(vec4(lb<lo||lb>hi?a:b,1.));
+  }`});
+outputScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),outputMaterial));
 const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 80);
 function resizeScene() {
   const { width, height } = canvas.parentElement.getBoundingClientRect();
@@ -39,7 +62,8 @@ function resizeScene() {
   camera.updateProjectionMatrix();
   renderer.setSize(width, height);
   renderer.getDrawingBufferSize(bufferSize);
-  rearTarget.setSize(Math.max(1,Math.round(bufferSize.x)),Math.max(1,Math.round(bufferSize.y)));
+  frontTarget.setSize(bufferSize.x,bufferSize.y);
+  rearTarget.setSize(Math.max(1,Math.round(bufferSize.x*refractionScale)),Math.max(1,Math.round(bufferSize.y*refractionScale)));
 }
 resizeScene();
 window.addEventListener("resize", resizeScene);
@@ -242,17 +266,25 @@ function updateViewControls(){
   jellyMaterial.clearcoat=.18*b;rearMaterial.clearcoat=.25*b;
 }
 for(const name of Object.keys(defaults))ui[name].addEventListener('input',()=>{syncOutputs();updateViewControls();});
-ui.nudge.addEventListener('click',()=>{release();body.nudge();});
+ui.nudge.addEventListener('click',()=>{release();body.nudge(settings.mass);});
 ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of Object.keys(defaults))ui[name].value=defaults[name];syncOutputs();updateViewControls();ui.autorotate.checked=true;ui.shadowToggle.checked=true;});
 const renderPoint=[0,0,0];
-let last=performance.now();
+let last=performance.now(),qualityFrames=0,qualityTime=0;
 function animate(now){
   requestAnimationFrame(animate);
   const dt=Math.max(.0001,Math.min((now-last)/1000,.15));last=now;
+  // Only lower resolution after a sustained slow interval; never alternate sizes.
+  if(!document.hidden){
+    qualityFrames++;qualityTime+=dt;
+    if(qualityFrames>=45){
+      if(qualityTime/qualityFrames>.021 && refractionScale>.5){refractionScale=Math.max(.5,refractionScale*.82);resizeScene();}
+      qualityFrames=0;qualityTime=0;
+    }
+  }
   // Consume ordinary frame time in full, including 15–25 fps frames.
   const steps=Math.max(1,Math.ceil(dt/(1/90))), stepDt=dt/steps;
   for(let step=0;step<steps;step++){
-    if(body.grab?.desired)for(let k=0;k<3;k++)body.grab.target[k]+=(body.grab.desired[k]-body.grab.target[k])*(1-Math.exp(-36*stepDt));
+    if(body.grab?.desired)for(let k=0;k<3;k++)body.grab.target[k]+=(body.grab.desired[k]-body.grab.target[k])*(1-Math.exp(-48/(.6+settings.mass)*stepDt));
     body.step(stepDt,settings);
   }
   body.prepareRender();
@@ -287,7 +319,8 @@ function animate(now){
     renderer.setRenderTarget(rearTarget);renderer.render(scene,camera);
   }
   jellyMesh.visible=true;rearMesh.visible=false;
-  renderer.setRenderTarget(null);renderer.render(scene,camera);
+  renderer.setRenderTarget(frontTarget);renderer.render(scene,camera);
+  renderer.setRenderTarget(null);renderer.render(outputScene,outputCamera);
 }
 requestAnimationFrame(animate);
 
