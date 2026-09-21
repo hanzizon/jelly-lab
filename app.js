@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=floor-press-17";
-import { shapeMapper } from "./shapes.js?v=floor-press-17";
+import { Jelly } from "./physics.js?v=window-light-18";
+import { shapeMapper } from "./shapes.js?v=window-light-18";
 
 const canvas = document.querySelector("#scene");
 
@@ -87,8 +87,8 @@ function windowLight(position,width,height,strength){
   }studio.add(frame);
 }
 studio.background=new THREE.Color(0x444c5c);
-windowLight([-3,5,4],4.5,6,4.5);
-windowLight([4,2,-3],2,3.2,2.2);
+windowLight([-3,6,-4],4.5,6,4.5);
+windowLight([5,3,2],2,3.2,1.4);
 const pmrem=new THREE.PMREMGenerator(renderer);
 const environment=pmrem.fromScene(studio,0);
 scene.environment=environment.texture;pmrem.dispose();
@@ -193,12 +193,37 @@ jellyMaterial.onBeforeCompile = shader => {
       'float exitDepth = texture2D(jellyDepth, gl_FragCoord.xy / jellyScreenSize).r;\nfloat exitZ = -perspectiveDepthToViewZ(exitDepth, jellyNear, jellyFar);\nmaterial.thickness = clamp(exitZ - vViewPosition.z, 0.015, 3.8);'));
 };
 const compileTransmission=jellyMaterial.onBeforeCompile;
+const windowBrightness={value:1};
 jellyMaterial.onBeforeCompile=shader=>{
   compileTransmission(shader);
+  shader.uniforms.windowBrightness=windowBrightness;
+  shader.vertexShader='varying vec3 jellyWorldPosition;\n'+shader.vertexShader;
+  shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\njellyWorldPosition=(modelMatrix*vec4(transformed,1.0)).xyz;');
+  shader.fragmentShader='uniform float windowBrightness;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
   shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
-    '#include <opaque_fragment>\ngl_FragColor.a = 0.48 + 0.5 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);');
+    `// Add only the bright window panes. Changing their strength must not
+     // increase clearcoat energy loss or deepen the transmitted rear surface.
+       vec3 windowRay=inverseTransformDirection(reflect(-normalize(vViewPosition),normal),viewMatrix);
+       vec3 windowCenter=vec3(-2.5,6.0,-7.0);
+       vec3 windowNormal=normalize(-windowCenter);
+       vec3 windowRight=normalize(cross(vec3(0.0,1.0,0.0),windowNormal));
+       vec3 windowUp=cross(windowNormal,windowRight);
+       float windowDen=dot(windowRay,windowNormal);
+       if(abs(windowDen)>0.0001){
+         float windowT=dot(windowCenter-jellyWorldPosition,windowNormal)/windowDen;
+         vec3 windowHit=jellyWorldPosition+windowRay*windowT-windowCenter;
+         vec2 windowUv=vec2(dot(windowHit,windowRight)/4.5,dot(windowHit,windowUp)/5.5)+0.5;
+         vec2 edgeWidth=max(fwidth(windowUv)*1.5,vec2(0.003));
+         vec2 outer=smoothstep(vec2(0.0),edgeWidth,windowUv)*(1.0-smoothstep(vec2(1.0)-edgeWidth,vec2(1.0),windowUv));
+         vec2 pane=fract(windowUv*vec2(2.0,3.0));
+         vec2 bars=smoothstep(vec2(0.035),vec2(0.055)+edgeWidth,pane)*(1.0-smoothstep(vec2(0.945)-edgeWidth,vec2(0.965),pane));
+         float panes=outer.x*outer.y*bars.x*bars.y*step(0.0,windowT);
+         outgoingLight+=vec3(1.0,0.98,0.94)*panes*windowBrightness*0.85;
+       }
+     #include <opaque_fragment>
+     gl_FragColor.a = 0.48 + 0.5 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);`);
 };
-jellyMaterial.customProgramCacheKey=()=> 'jelly-clear-film-v3';
+jellyMaterial.customProgramCacheKey=()=> 'jelly-window-highlight-v4';
 const jellyMesh=new THREE.Mesh(jellyGeometry,jellyMaterial);jellyGroup.add(jellyMesh);
 const characterColors={vocal:0x162ae3,dj:0x3c458f};
 function updateAppearance(kind,mapper){
@@ -274,10 +299,13 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden){release();
 function updateViewControls(){
   camera.zoom=settings.zoom;camera.lookAt(0,.15-.95*THREE.MathUtils.clamp((settings.zoom-1)/.5,0,1),0);camera.updateProjectionMatrix();
   const b=settings.brightness;
-  jellyMaterial.envMapIntensity=1.15*b;rearMaterial.envMapIntensity=1.3*b;
-  for(const mat of [jellyMaterial,rearMaterial])mat.specularIntensity=b;
-  jellyMaterial.clearcoat=.18*b;rearMaterial.clearcoat=.25*b;
+  windowBrightness.value=b;
+  // Keep transmission, rear shading and energy-conserving coat fixed.
+  jellyMaterial.envMapIntensity=.35;rearMaterial.envMapIntensity=1.3;
+  jellyMaterial.specularIntensity=.4;rearMaterial.specularIntensity=1;
+  jellyMaterial.clearcoat=.08;rearMaterial.clearcoat=.25;
 }
+updateViewControls();
 for(const name of Object.keys(defaults))ui[name].addEventListener('input',()=>{syncOutputs();updateViewControls();});
 ui.nudge.addEventListener('click',()=>{release();body.nudge(settings.mass);});
 ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of Object.keys(defaults))ui[name].value=defaults[name];syncOutputs();updateViewControls();ui.autorotate.checked=true;ui.shadowToggle.checked=true;});
