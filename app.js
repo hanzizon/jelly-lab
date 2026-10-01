@@ -341,15 +341,29 @@ function updateBubbles(dt){
  bubbleMesh.visible=popMesh.visible=bubbleToggle.checked;if(!bubbleToggle.checked)return;
  jellyGeometry.computeBoundingBox();bubbleBounds.copy(jellyGeometry.boundingBox);
  const size=bubbleBounds.getSize(new THREE.Vector3()),middle=bubbleBounds.getCenter(new THREE.Vector3());
- const oldSide=jellyMaterial.side;jellyMaterial.side=THREE.DoubleSide;jellyMesh.updateMatrixWorld(true);
+ // Bin projected triangles once, instead of raycasting the whole mesh per bubble.
+ const bins=Array.from({length:256},()=>[]),positions=jellyGeometry.attributes.position,index=jellyGeometry.index;
+ const gx=x=>Math.max(0,Math.min(15,Math.floor((x-bubbleBounds.min.x)/Math.max(size.x,.001)*16)));
+ const gz=z=>Math.max(0,Math.min(15,Math.floor((z-bubbleBounds.min.z)/Math.max(size.z,.001)*16)));
+ for(let f=0;f<(index?index.count:positions.count);f+=3){
+ const ids=[0,1,2].map(k=>index?index.getX(f+k):f+k),xs=ids.map(i=>positions.getX(i)),zs=ids.map(i=>positions.getZ(i));
+ const determinant=(zs[1]-zs[2])*(xs[0]-xs[2])+(xs[2]-xs[1])*(zs[0]-zs[2]);if(Math.abs(determinant)<1e-10)continue;
+ const triangle={xs,zs,ys:ids.map(i=>positions.getY(i)),determinant};
+ for(let z=gz(Math.min(...zs));z<=gz(Math.max(...zs));z++)for(let x=gx(Math.min(...xs));x<=gx(Math.max(...xs));x++)bins[z*16+x].push(triangle);
+ }
  for(let i=0;i<bubbleCount;i++){
   let b=bubbleStates[i];
   if(!b)b=bubbleStates[i]={x:middle.x+(Math.random()-.5)*size.x*.86,z:middle.z+(Math.random()-.5)*size.z*.86,y:null,seed:Math.random()*20,r:.016+Math.random()*.014,age:0,seeded:bubbleStates.length>=bubbleCount};
   b.age+=dt;
   const x=b.x+Math.sin(b.age*2.2+b.seed)*.014,z=b.z+Math.cos(b.age*1.8+b.seed)*.014;
-  bubbleRay.set(new THREE.Vector3(x,bubbleBounds.min.y-.1,z),bubbleUp);
-  const hits=bubbleRay.intersectObject(jellyMesh,false),levels=[];
-  for(const hit of hits)if(!levels.length||hit.point.y-levels[levels.length-1]>.0001)levels.push(hit.point.y);
+  const intersections=[];
+  for(const {xs,zs,ys,determinant} of bins[gz(z)*16+gx(x)]){
+   const u=((zs[1]-zs[2])*(x-xs[2])+(xs[2]-xs[1])*(z-zs[2]))/determinant;
+   const v=((zs[2]-zs[0])*(x-xs[2])+(xs[0]-xs[2])*(z-zs[2]))/determinant;
+   if(u>=0&&v>=0&&u+v<=1)intersections.push(u*ys[0]+v*ys[1]+(1-u-v)*ys[2]);
+  }
+  intersections.sort((a,b)=>a-b);const levels=[];
+  for(const y of intersections)if(!levels.length||y-levels[levels.length-1]>.0001)levels.push(y);
   let low=0,high=0;
   for(let j=0;j+1<levels.length;j+=2){if(levels[j+1]-levels[j]>.09){low=levels[j]+.035;high=levels[j+1]-.035;if(b.y!==null&&b.y>=low&&b.y<=high)break;}}
   let radius=0,ring=0;
@@ -365,7 +379,7 @@ function updateBubbles(dt){
   bubbleTransform.quaternion.copy(camera.quaternion);bubbleTransform.scale.setScalar(radius);bubbleTransform.updateMatrix();bubbleMesh.setMatrixAt(i,bubbleTransform.matrix);
   bubbleTransform.scale.setScalar(ring);bubbleTransform.updateMatrix();popMesh.setMatrixAt(i,bubbleTransform.matrix);
  }
- jellyMaterial.side=oldSide;bubbleMesh.instanceMatrix.needsUpdate=true;popMesh.instanceMatrix.needsUpdate=true;
+ bubbleMesh.instanceMatrix.needsUpdate=true;popMesh.instanceMatrix.needsUpdate=true;
 }
 jellyGroup.position.set(0,0,0);
 const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
@@ -534,4 +548,3 @@ function exciteFizz(strength){
  gain.cancelScheduledValues(now);gain.setTargetAtTime(.06+.13*strength,now,.045);
  gain.setTargetAtTime(0,now+.13,.22);
 }
-
