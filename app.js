@@ -1,17 +1,17 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=photo-floor-19";
-import { shapeMapper } from "./shapes.js?v=photo-floor-19";
+import { Jelly } from "./physics.js?v=view-angle-20";
+import { shapeMapper } from "./shapes.js?v=view-angle-20";
 
 const canvas = document.querySelector("#scene");
 
-const ui = Object.fromEntries(["mass", "firmness", "brightness", "zoom", "massValue", "firmnessValue", "brightnessValue", "zoomValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
-const defaults = { mass: 1.25, firmness: 0.06, brightness: 1, zoom: 1 };
+const ui = Object.fromEntries(["mass", "firmness", "brightness", "zoom", "viewAngle", "massValue", "firmnessValue", "brightnessValue", "zoomValue", "viewAngleValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
+const defaults = { mass: 1.25, firmness: 0.06, brightness: 1, zoom: 1, viewAngle:45 };
 const settings = { ...defaults, damping: .95 };
 function syncOutputs() {
   for (const name of Object.keys(defaults)) {
     settings[name] = Number(ui[name].value);
-    ui[name + "Value"].value = settings[name].toFixed(2);
+    ui[name + "Value"].value = name==='viewAngle'?`${settings[name]}°`:settings[name].toFixed(2);
   }
 }
 syncOutputs();
@@ -52,15 +52,17 @@ const outputMaterial=new THREE.ShaderMaterial({
 outputScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),outputMaterial));
 const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 80);
 let updatePhotoLayout=()=>{};
+const cameraFocus=new THREE.Vector3(0,-.8,0);
+function updateCameraPose(){
+  const radius=2.9/(Math.tan(THREE.MathUtils.degToRad(17))*Math.min(camera.aspect,1));
+  const angle=THREE.MathUtils.degToRad(settings.viewAngle);
+  camera.position.set(0,cameraFocus.y+Math.sin(angle)*radius,Math.cos(angle)*radius);
+  camera.lookAt(cameraFocus);camera.zoom=settings.zoom;camera.updateProjectionMatrix();
+}
 function resizeScene() {
   const { width, height } = canvas.parentElement.getBoundingClientRect();
   camera.aspect = width / Math.max(height, 1);
-  const distance = 3.2 / (Math.tan(THREE.MathUtils.degToRad(17)) * Math.min(camera.aspect, 1));
-  const character=document.getElementById('shape')?.value !== 'cylinder';
-  camera.position.set(0, character?7:5, distance*(character?.62:1));
-  camera.lookAt(0, .15-.95*THREE.MathUtils.clamp((settings.zoom-1)/.5,0,1), 0);
-  camera.zoom=settings.zoom;
-  camera.updateProjectionMatrix();
+  updateCameraPose();
   renderer.setSize(width, height);
   renderer.getDrawingBufferSize(bufferSize);
   frontTarget.setSize(bufferSize.x,bufferSize.y);
@@ -123,9 +125,9 @@ const floorTexture=new THREE.CanvasTexture(floorCanvas);floorTexture.wrapS=floor
 const floorMesh=new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),new THREE.MeshBasicMaterial({map:floorTexture,toneMapped:false}));floorMesh.rotation.x=-Math.PI/2;floorMesh.position.y=-1.56;scene.add(floorMesh);
 
 // The uploaded photo lives on the same 3D floor, never on a flat CSS backdrop.
-const photoMaterial=new THREE.MeshBasicMaterial({toneMapped:false});
+const photoMaterial=new THREE.MeshBasicMaterial({toneMapped:false,transparent:true,opacity:.7,depthWrite:false});
 const photoFloor=new THREE.Mesh(new THREE.PlaneGeometry(1,1),photoMaterial);
-photoFloor.rotation.x=-Math.PI/2;photoFloor.position.y=-1.558;photoFloor.visible=false;scene.add(photoFloor);
+photoFloor.rotation.x=-Math.PI/2;photoFloor.position.y=-1.558;photoFloor.visible=false;photoFloor.renderOrder=-1;scene.add(photoFloor);
 const backgroundInput=document.getElementById('backgroundPhoto');
 const backgroundReset=document.getElementById('backgroundReset');
 const backgroundStatus=document.getElementById('backgroundStatus');
@@ -134,11 +136,18 @@ updatePhotoLayout=()=>{
   if(!photoFloor.visible)return;
   camera.updateMatrixWorld(true);
   const ray=new THREE.Raycaster(),floor=new THREE.Plane(new THREE.Vector3(0,1,0),1.558),hits=[];
-  for(const x of [-1,1])for(const y of [-1,1]){
-    ray.setFromCamera(new THREE.Vector2(x,y),camera);
-    const hit=ray.ray.intersectPlane(floor,new THREE.Vector3());if(hit)hits.push(hit);
+  // Cover the whole allowed orbit once; do not slide the photo as the view tilts.
+  const probe=camera.clone(),radius=camera.position.distanceTo(cameraFocus);probe.zoom=.75;
+  for(const degrees of [30,45,60]){
+    const angle=THREE.MathUtils.degToRad(degrees);
+    probe.position.set(0,cameraFocus.y+Math.sin(angle)*radius,Math.cos(angle)*radius);
+    probe.lookAt(cameraFocus);probe.updateProjectionMatrix();probe.updateMatrixWorld(true);
+    for(const x of [-1,1])for(const y of [-1,1]){
+      ray.setFromCamera(new THREE.Vector2(x,y),probe);
+      const hit=ray.ray.intersectPlane(floor,new THREE.Vector3());if(hit)hits.push(hit);
+    }
   }
-  if(hits.length!==4)return;
+  if(hits.length!==12)return;
   const minX=Math.min(...hits.map(p=>p.x)),maxX=Math.max(...hits.map(p=>p.x));
   const minZ=Math.min(...hits.map(p=>p.z)),maxZ=Math.max(...hits.map(p=>p.z));
   const width=Math.max(maxX-minX,(maxZ-minZ)*photoAspect)*1.08;
@@ -161,7 +170,7 @@ backgroundInput.addEventListener('change',async()=>{
     const texture=new THREE.CanvasTexture(surface);texture.colorSpace=THREE.SRGBColorSpace;
     texture.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
     photoMaterial.map?.dispose();photoMaterial.map=texture;photoMaterial.needsUpdate=true;
-    photoAspect=surface.width/surface.height;photoFloor.visible=true;floorMesh.visible=false;updatePhotoLayout();
+    photoAspect=surface.width/surface.height;photoFloor.visible=true;floorMesh.visible=true;updatePhotoLayout();
     backgroundReset.disabled=false;backgroundStatus.textContent='사진이 원근감 있는 바닥 배경으로 적용되었습니다.';
   }catch(error){if(request===photoRequest)backgroundStatus.textContent='사진을 읽지 못했습니다. 다른 사진을 선택해 주세요.';}
   finally{URL.revokeObjectURL(url);backgroundInput.value='';}
@@ -349,7 +358,7 @@ window.addEventListener('touchcancel',release,{capture:true,passive:true});
 window.addEventListener('blur',release);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){release();accumulator=0;last=performance.now();}});
 function updateViewControls(){
-  camera.zoom=settings.zoom;camera.lookAt(0,.15-.95*THREE.MathUtils.clamp((settings.zoom-1)/.5,0,1),0);camera.updateProjectionMatrix();
+  updateCameraPose();
   updatePhotoLayout();
   const b=settings.brightness;
   windowBrightness.value=b;
