@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=carbonation-23";
-import { shapeMapper } from "./shapes.js?v=carbonation-23";
+import { Jelly } from "./physics.js?v=carbonation-24";
+import { shapeMapper } from "./shapes.js?v=carbonation-24";
 
 const canvas = document.querySelector("#scene");
 
@@ -321,15 +321,16 @@ shapeSelect.addEventListener('change',changeShape);
 colorInput.addEventListener('input',()=>{customColor=colorInput.value;updateAppearance(shapeSelect.value,bubbleMapper);});
 // Bubbles are sampled from interior material coordinates, so they stay inside
 // the deforming volume. Paths are cached when the shape changes.
-const bubbleCount=18;
+const bubbleCount=34;
+let bubbleExcitement=0;
 const bubbleMesh=new THREE.InstancedMesh(new THREE.SphereGeometry(1,16,12),new THREE.MeshPhysicalMaterial({color:0xffffff,roughness:.04,metalness:0,transparent:true,opacity:.8,depthWrite:false,envMapIntensity:2}),bubbleCount);
 const popMesh=new THREE.InstancedMesh(new THREE.TorusGeometry(1,.07,5,16),new THREE.MeshBasicMaterial({color:0xf1f8ff,transparent:true,opacity:.5,depthWrite:false}),bubbleCount);
 bubbleMesh.material.onBeforeCompile=shader=>{
  shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',`#include <opaque_fragment>
  float rim=pow(1.0-abs(dot(normal,normalize(vViewPosition))),2.0);
  float gleam=pow(max(0.0,dot(normal,normalize(vec3(-.5,.7,.5)))),32.0);
- gl_FragColor.rgb=mix(vec3(.025,.055,.13),vec3(1.3),smoothstep(.10,.48,rim))+gleam*2.1;
- gl_FragColor.a=clamp(.10+rim*.95+gleam*.9,0.0,.98);`);
+ gl_FragColor.rgb=mix(vec3(.025,.055,.13),vec3(1.55),smoothstep(.08,.43,rim))+gleam*2.4;
+ gl_FragColor.a=clamp(.13+rim*1.05+gleam*.95,0.0,.98);`);
 };
 bubbleMesh.renderOrder=1;popMesh.renderOrder=1;jellyMesh.renderOrder=2;
 bubbleMesh.frustumCulled=false;popMesh.frustumCulled=false;scene.add(bubbleMesh,popMesh);
@@ -338,7 +339,8 @@ const bubbleBounds=new THREE.Box3(),bubbleUp=new THREE.Vector3(0,1,0);
 function buildBubblePaths(){bubbleStates.length=0;}
 buildBubblePaths();
 function updateBubbles(dt){
- bubbleMesh.visible=popMesh.visible=bubbleToggle.checked;if(!bubbleToggle.checked)return;
+ bubbleMesh.visible=popMesh.visible=bubbleToggle.checked;if(!bubbleToggle.checked){bubbleExcitement=0;return;}
+ bubbleExcitement*=Math.exp(-dt/.65);
  jellyGeometry.computeBoundingBox();bubbleBounds.copy(jellyGeometry.boundingBox);
  const size=bubbleBounds.getSize(new THREE.Vector3()),middle=bubbleBounds.getCenter(new THREE.Vector3());
  // Bin projected triangles once, instead of raycasting the whole mesh per bubble.
@@ -352,6 +354,8 @@ function updateBubbles(dt){
  for(let z=gz(Math.min(...zs));z<=gz(Math.max(...zs));z++)for(let x=gx(Math.min(...xs));x<=gx(Math.max(...xs));x++)bins[z*16+x].push(triangle);
  }
  for(let i=0;i<bubbleCount;i++){
+  const activity=i<18?1:THREE.MathUtils.smoothstep(bubbleExcitement,(i-18)/20,(i-18)/20+.22);
+  if(activity<.005){bubbleStates[i]=null;bubbleTransform.scale.setScalar(0);bubbleTransform.updateMatrix();bubbleMesh.setMatrixAt(i,bubbleTransform.matrix);popMesh.setMatrixAt(i,bubbleTransform.matrix);continue;}
   let b=bubbleStates[i];
   if(!b)b=bubbleStates[i]={x:middle.x+(Math.random()-.5)*size.x*.86,z:middle.z+(Math.random()-.5)*size.z*.86,y:null,seed:Math.random()*20,r:.016+Math.random()*.014,age:0,seeded:bubbleStates.length>=bubbleCount};
   b.age+=dt;
@@ -365,13 +369,13 @@ function updateBubbles(dt){
   intersections.sort((a,b)=>a-b);const levels=[];
   for(const y of intersections)if(!levels.length||y-levels[levels.length-1]>.0001)levels.push(y);
   let low=0,high=0;
-  for(let j=0;j+1<levels.length;j+=2){if(levels[j+1]-levels[j]>.09){low=levels[j]+.035;high=levels[j+1]-.035;if(b.y!==null&&b.y>=low&&b.y<=high)break;}}
+  for(let j=0;j+1<levels.length;j+=2){if(levels[j+1]-levels[j]>.09){low=levels[j]+.065;high=levels[j+1]-.065;if(b.y!==null&&b.y>=low&&b.y<=high)break;}}
   let radius=0,ring=0;
   if(high>low){
    if(b.y===null)b.y=low+(b.seeded?0:Math.random()*(high-low)*.9);
    b.y+=dt*(.07+b.r*3); // World +Y, never the object's rotated local axis.
    const t=THREE.MathUtils.clamp((b.y-low)/(high-low),0,1);
-   radius=b.r*(.65+t*.6);
+   radius=Math.min(.055,b.r*(.65+t*.6)*(1+bubbleExcitement*.65),(high-low)*.2)*activity;
    if(b.y>=high){ring=radius*1.35;radius=0;bubbleStates[i]=null;}
    else if(b.y<low){radius=0;bubbleStates[i]=null;}
    bubbleTransform.position.set(x,Math.min(b.y,high),z);
@@ -542,9 +546,11 @@ async function syncFizz(){
 bubbleToggle.addEventListener('change',syncFizz);soundToggle.addEventListener('change',syncFizz);document.addEventListener('visibilitychange',syncFizz);window.addEventListener('pagehide',stopFizz);
 
 function exciteFizz(strength){
+ if(bubbleToggle.checked&&!document.hidden)bubbleExcitement=Math.min(1,Math.max(bubbleExcitement,strength)+.12);
  if(!bubbleToggle.checked||!soundToggle.checked||document.hidden)return;
  if(!fizzContext||fizzContext.state!=='running'){syncFizz().then(()=>{if(fizzContext?.state==='running')exciteFizz(strength);});return;}
  const now=fizzContext.currentTime,gain=fizzGain.gain;
  gain.cancelScheduledValues(now);gain.setTargetAtTime(.06+.13*strength,now,.045);
- gain.setTargetAtTime(0,now+.13,.22);
+ gain.setTargetAtTime(0,now+.05,.65);
 }
+
