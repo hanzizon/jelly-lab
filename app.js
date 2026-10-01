@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=window-light-18";
-import { shapeMapper } from "./shapes.js?v=window-light-18";
+import { Jelly } from "./physics.js?v=photo-floor-19";
+import { shapeMapper } from "./shapes.js?v=photo-floor-19";
 
 const canvas = document.querySelector("#scene");
 
@@ -51,6 +51,7 @@ const outputMaterial=new THREE.ShaderMaterial({
   }`});
 outputScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),outputMaterial));
 const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 80);
+let updatePhotoLayout=()=>{};
 function resizeScene() {
   const { width, height } = canvas.parentElement.getBoundingClientRect();
   camera.aspect = width / Math.max(height, 1);
@@ -64,6 +65,7 @@ function resizeScene() {
   renderer.getDrawingBufferSize(bufferSize);
   frontTarget.setSize(bufferSize.x,bufferSize.y);
   rearTarget.setSize(Math.max(1,Math.round(bufferSize.x*refractionScale)),Math.max(1,Math.round(bufferSize.y*refractionScale)));
+  updatePhotoLayout();
 }
 resizeScene();
 window.addEventListener("resize", resizeScene);
@@ -119,6 +121,56 @@ floorContext.strokeStyle='rgba(90,112,148,.28)';floorContext.lineWidth=3;
 floorContext.beginPath();floorContext.moveTo(0,0);floorContext.lineTo(256,0);floorContext.moveTo(0,0);floorContext.lineTo(0,256);floorContext.stroke();
 const floorTexture=new THREE.CanvasTexture(floorCanvas);floorTexture.wrapS=floorTexture.wrapT=THREE.RepeatWrapping;floorTexture.repeat.set(666,666);floorTexture.colorSpace=THREE.SRGBColorSpace;
 const floorMesh=new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),new THREE.MeshBasicMaterial({map:floorTexture,toneMapped:false}));floorMesh.rotation.x=-Math.PI/2;floorMesh.position.y=-1.56;scene.add(floorMesh);
+
+// The uploaded photo lives on the same 3D floor, never on a flat CSS backdrop.
+const photoMaterial=new THREE.MeshBasicMaterial({toneMapped:false});
+const photoFloor=new THREE.Mesh(new THREE.PlaneGeometry(1,1),photoMaterial);
+photoFloor.rotation.x=-Math.PI/2;photoFloor.position.y=-1.558;photoFloor.visible=false;scene.add(photoFloor);
+const backgroundInput=document.getElementById('backgroundPhoto');
+const backgroundReset=document.getElementById('backgroundReset');
+const backgroundStatus=document.getElementById('backgroundStatus');
+let photoAspect=1,photoRequest=0;
+updatePhotoLayout=()=>{
+  if(!photoFloor.visible)return;
+  camera.updateMatrixWorld(true);
+  const ray=new THREE.Raycaster(),floor=new THREE.Plane(new THREE.Vector3(0,1,0),1.558),hits=[];
+  for(const x of [-1,1])for(const y of [-1,1]){
+    ray.setFromCamera(new THREE.Vector2(x,y),camera);
+    const hit=ray.ray.intersectPlane(floor,new THREE.Vector3());if(hit)hits.push(hit);
+  }
+  if(hits.length!==4)return;
+  const minX=Math.min(...hits.map(p=>p.x)),maxX=Math.max(...hits.map(p=>p.x));
+  const minZ=Math.min(...hits.map(p=>p.z)),maxZ=Math.max(...hits.map(p=>p.z));
+  const width=Math.max(maxX-minX,(maxZ-minZ)*photoAspect)*1.08;
+  photoFloor.scale.set(width,width/photoAspect,1);
+  photoFloor.position.set((minX+maxX)/2,-1.558,(minZ+maxZ)/2);
+};
+backgroundInput.addEventListener('change',async()=>{
+  const file=backgroundInput.files?.[0];if(!file)return;
+  const request=++photoRequest;
+  if(!/^image\/(jpeg|png|webp|avif)$/.test(file.type)){backgroundStatus.textContent='JPG, PNG, WebP 또는 AVIF 사진을 선택해 주세요.';return;}
+  backgroundStatus.textContent='사진을 적용하고 있습니다…';
+  const url=URL.createObjectURL(file);
+  try{
+    const image=new Image();image.src=url;await image.decode();
+    if(request!==photoRequest)return;
+    const limit=Math.min(2048,renderer.capabilities.maxTextureSize),ratio=Math.min(1,limit/Math.max(image.naturalWidth,image.naturalHeight));
+    const surface=document.createElement('canvas');surface.width=Math.max(1,Math.round(image.naturalWidth*ratio));surface.height=Math.max(1,Math.round(image.naturalHeight*ratio));
+    const context=surface.getContext('2d');context.fillStyle='#eef2f7';context.fillRect(0,0,surface.width,surface.height);
+    context.drawImage(image,0,0,surface.width,surface.height);
+    const texture=new THREE.CanvasTexture(surface);texture.colorSpace=THREE.SRGBColorSpace;
+    texture.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+    photoMaterial.map?.dispose();photoMaterial.map=texture;photoMaterial.needsUpdate=true;
+    photoAspect=surface.width/surface.height;photoFloor.visible=true;floorMesh.visible=false;updatePhotoLayout();
+    backgroundReset.disabled=false;backgroundStatus.textContent='사진이 원근감 있는 바닥 배경으로 적용되었습니다.';
+  }catch(error){if(request===photoRequest)backgroundStatus.textContent='사진을 읽지 못했습니다. 다른 사진을 선택해 주세요.';}
+  finally{URL.revokeObjectURL(url);backgroundInput.value='';}
+});
+backgroundReset.addEventListener('click',()=>{
+  photoRequest++;photoFloor.visible=false;floorMesh.visible=true;
+  photoMaterial.map?.dispose();photoMaterial.map=null;photoMaterial.needsUpdate=true;
+  backgroundInput.value='';backgroundReset.disabled=true;backgroundStatus.textContent='기본 배경으로 돌아왔습니다.';
+});
 
 
 const jellyGroup = new THREE.Group(); scene.add(jellyGroup);
@@ -298,6 +350,7 @@ window.addEventListener('blur',release);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){release();accumulator=0;last=performance.now();}});
 function updateViewControls(){
   camera.zoom=settings.zoom;camera.lookAt(0,.15-.95*THREE.MathUtils.clamp((settings.zoom-1)/.5,0,1),0);camera.updateProjectionMatrix();
+  updatePhotoLayout();
   const b=settings.brightness;
   windowBrightness.value=b;
   // Keep transmission, rear shading and energy-conserving coat fixed.
