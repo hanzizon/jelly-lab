@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=carbonation-24";
-import { shapeMapper } from "./shapes.js?v=carbonation-24";
+import { Jelly } from "./physics.js?v=hologram-25";
+import { shapeMapper } from "./shapes.js?v=hologram-25";
 
 const canvas = document.querySelector("#scene");
 
@@ -261,14 +261,15 @@ jellyMaterial.onBeforeCompile = shader => {
       'float exitDepth = texture2D(jellyDepth, gl_FragCoord.xy / jellyScreenSize).r;\nfloat exitZ = -perspectiveDepthToViewZ(exitDepth, jellyNear, jellyFar);\nmaterial.thickness = clamp(exitZ - vViewPosition.z, 0.015, 3.8);'));
 };
 const compileTransmission=jellyMaterial.onBeforeCompile;
-const windowBrightness={value:1};
+const windowBrightness={value:1},hologram={value:0};
 jellyMaterial.onBeforeCompile=shader=>{
   compileTransmission(shader);
   shader.uniforms.windowBrightness=windowBrightness;
+  shader.uniforms.hologram=hologram;
   shader.uniforms.jellyOpacity=jellyOpacity;
   shader.vertexShader='varying vec3 jellyWorldPosition;\n'+shader.vertexShader;
   shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\njellyWorldPosition=(modelMatrix*vec4(transformed,1.0)).xyz;');
-  shader.fragmentShader='uniform float windowBrightness;\nuniform float jellyOpacity;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
+  shader.fragmentShader='uniform float hologram;\nuniform float windowBrightness;\nuniform float jellyOpacity;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
   shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
     `// Add only the bright window panes. Changing their strength must not
      // increase clearcoat energy loss or deepen the transmitted rear surface.
@@ -289,6 +290,13 @@ jellyMaterial.onBeforeCompile=shader=>{
          float panes=outer.x*outer.y*bars.x*bars.y*step(0.0,windowT);
          outgoingLight+=vec3(1.0,0.98,0.94)*panes*windowBrightness*0.85;
        }
+     if(hologram>0.5){
+       float facing=abs(dot(normal,normalize(vViewPosition)));
+       float angle=dot(windowRay,normalize(vec3(-.4,.8,-.5)));
+       vec3 spectral=.5+.5*cos(6.2831853*(facing*1.6+angle*.65+vec3(0.0,.333,.667)));
+       float sheen=(.24+.5*pow(1.0-facing,1.3))*(.35+.65*clamp(windowBrightness,0.0,2.5));
+       outgoingLight=mix(outgoingLight,outgoingLight*(.6+spectral*.85),.55)+spectral*sheen;
+     }
      #include <opaque_fragment>
      float edgeGlow=pow(1.0-abs(dot(normal,normalize(vViewPosition))),2.0);
      gl_FragColor.a = mix(jellyOpacity,max(jellyOpacity,0.62),edgeGlow);`);
@@ -302,7 +310,7 @@ function updateAppearance(kind,mapper){
   const isCharacter=kind==='vocal'||kind==='dj';
   const base=new THREE.Color(customColor||(isCharacter?characterColors[kind]:0x2f6bff)),white=new THREE.Color(0xffffff);
   colorInput.value='#'+base.getHexString();
-  transmissionTint.copy(base);rearMaterial.color.copy(base);
+  transmissionTint.copy(hologram.value?base.clone().lerp(white,.8):base);rearMaterial.color.copy(hologram.value?base.clone().lerp(white,.65):base);
   ground.material.color.copy(isCharacter?base.clone().lerp(white,.5):white);
   rim.color.copy(isCharacter?base.clone().lerp(white,.82):new THREE.Color(0xbfd8ff));
   key.intensity=isCharacter?2.1:1.3;
@@ -318,7 +326,7 @@ function changeShape(){
   skins=points.map(p=>body.skin(p.toArray(),mapper(p.toArray())));updateAppearance(shapeSelect.value,mapper);resizeScene();
 }
 shapeSelect.addEventListener('change',changeShape);
-colorInput.addEventListener('input',()=>{customColor=colorInput.value;updateAppearance(shapeSelect.value,bubbleMapper);});
+colorInput.addEventListener('input',()=>{hologram.value=0;document.getElementById('rainbowColor').setAttribute('aria-pressed','false');customColor=colorInput.value;updateAppearance(shapeSelect.value,bubbleMapper);});
 // Bubbles are sampled from interior material coordinates, so they stay inside
 // the deforming volume. Paths are cached when the shape changes.
 const bubbleCount=34;
@@ -554,3 +562,7 @@ function exciteFizz(strength){
  gain.setTargetAtTime(0,now+.05,.65);
 }
 
+
+const rainbowColor=document.getElementById('rainbowColor');
+rainbowColor.addEventListener('click',()=>{hologram.value=hologram.value?0:1;rainbowColor.setAttribute('aria-pressed',String(Boolean(hologram.value)));updateAppearance(shapeSelect.value,bubbleMapper);});
+document.getElementById('resetColor').addEventListener('click',()=>{customColor=null;hologram.value=0;rainbowColor.setAttribute('aria-pressed','false');updateAppearance(shapeSelect.value,bubbleMapper);});
