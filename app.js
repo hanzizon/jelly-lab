@@ -328,8 +328,8 @@ bubbleMesh.material.onBeforeCompile=shader=>{
  shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',`#include <opaque_fragment>
  float rim=pow(1.0-abs(dot(normal,normalize(vViewPosition))),2.0);
  float gleam=pow(max(0.0,dot(normal,normalize(vec3(-.5,.7,.5)))),32.0);
- gl_FragColor.rgb=mix(vec3(.08,.13,.24),vec3(1.0),smoothstep(.15,.65,rim))+gleam*1.8;
- gl_FragColor.a=clamp(.07+rim*.75+gleam*.8,0.0,.95);`);
+ gl_FragColor.rgb=mix(vec3(.025,.055,.13),vec3(1.3),smoothstep(.10,.48,rim))+gleam*2.1;
+ gl_FragColor.a=clamp(.10+rim*.95+gleam*.9,0.0,.98);`);
 };
 bubbleMesh.renderOrder=1;popMesh.renderOrder=1;jellyMesh.renderOrder=2;
 bubbleMesh.frustumCulled=false;popMesh.frustumCulled=false;scene.add(bubbleMesh,popMesh);
