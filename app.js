@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=appearance-22";
-import { shapeMapper } from "./shapes.js?v=appearance-22";
+import { Jelly } from "./physics.js?v=carbonation-23";
+import { shapeMapper } from "./shapes.js?v=carbonation-23";
 
 const canvas = document.querySelector("#scene");
 
@@ -321,7 +321,7 @@ shapeSelect.addEventListener('change',changeShape);
 colorInput.addEventListener('input',()=>{customColor=colorInput.value;updateAppearance(shapeSelect.value,bubbleMapper);});
 // Bubbles are sampled from interior material coordinates, so they stay inside
 // the deforming volume. Paths are cached when the shape changes.
-const bubbleCount=28,bubbleSteps=48,bubblePaths=[];
+const bubbleCount=18;
 const bubbleMesh=new THREE.InstancedMesh(new THREE.SphereGeometry(1,16,12),new THREE.MeshPhysicalMaterial({color:0xffffff,roughness:.04,metalness:0,transparent:true,opacity:.8,depthWrite:false,envMapIntensity:2}),bubbleCount);
 const popMesh=new THREE.InstancedMesh(new THREE.TorusGeometry(1,.07,5,16),new THREE.MeshBasicMaterial({color:0xf1f8ff,transparent:true,opacity:.5,depthWrite:false}),bubbleCount);
 bubbleMesh.material.onBeforeCompile=shader=>{
@@ -333,34 +333,39 @@ bubbleMesh.material.onBeforeCompile=shader=>{
 };
 bubbleMesh.renderOrder=1;popMesh.renderOrder=1;jellyMesh.renderOrder=2;
 bubbleMesh.frustumCulled=false;popMesh.frustumCulled=false;scene.add(bubbleMesh,popMesh);
-const bubbleTransform=new THREE.Object3D(),bubbleA=[0,0,0],bubbleB=[0,0,0];let bubbleTime=0;
-function buildBubblePaths(){
-  bubblePaths.length=0;
-  for(let i=0;i<bubbleCount;i++){
-    const path=[],angle=i*2.399963,r=.18+.5*((i*7%17)/17);
-    for(let j=0;j<=bubbleSteps;j++){
-      const t=j/bubbleSteps,p=[Math.cos(angle)*r+Math.sin(t*11+i)*.085,-.36+t*.64,Math.sin(angle)*r+Math.cos(t*9+i)*.085];
-      path.push(body.skin(p,bubbleMapper(p)));
-    }bubblePaths.push(path);
-  }
-}
+const bubbleTransform=new THREE.Object3D(),bubbleRay=new THREE.Raycaster(),bubbleStates=[];
+const bubbleBounds=new THREE.Box3(),bubbleUp=new THREE.Vector3(0,1,0);
+function buildBubblePaths(){bubbleStates.length=0;}
 buildBubblePaths();
 function updateBubbles(dt){
-  bubbleMesh.visible=popMesh.visible=bubbleToggle.checked;
-  if(!bubbleToggle.checked)return;
-  bubbleTime+=dt;
-  for(let i=0;i<bubbleCount;i++){
-    const phase=(bubbleTime/(3.6+(i%5)*.45)+i/bubbleCount)%1,t=Math.min(phase/.88,1);
-    const index=Math.min(bubbleSteps-1,Math.floor(t*bubbleSteps)),fraction=t*bubbleSteps-index;
-    body.renderSample(bubblePaths[i][index],bubbleA);body.renderSample(bubblePaths[i][index+1],bubbleB);
-    bubbleTransform.position.set(...bubbleA.map((v,k)=>v+(bubbleB[k]-v)*fraction));
-    bubbleTransform.quaternion.copy(camera.quaternion);
-    const radius=.022+.053*t,pop=Math.max(0,(phase-.88)/.12);
-    bubbleTransform.scale.setScalar(pop>0?0:radius);bubbleTransform.updateMatrix();bubbleMesh.setMatrixAt(i,bubbleTransform.matrix);
-    const ring=pop>0?radius*(1+pop*.8)*(1-pop*pop):0;
-    bubbleTransform.scale.setScalar(ring);bubbleTransform.updateMatrix();popMesh.setMatrixAt(i,bubbleTransform.matrix);
-  }
-  bubbleMesh.instanceMatrix.needsUpdate=true;popMesh.instanceMatrix.needsUpdate=true;
+ bubbleMesh.visible=popMesh.visible=bubbleToggle.checked;if(!bubbleToggle.checked)return;
+ jellyGeometry.computeBoundingBox();bubbleBounds.copy(jellyGeometry.boundingBox);
+ const size=bubbleBounds.getSize(new THREE.Vector3()),middle=bubbleBounds.getCenter(new THREE.Vector3());
+ const oldSide=jellyMaterial.side;jellyMaterial.side=THREE.DoubleSide;jellyMesh.updateMatrixWorld(true);
+ for(let i=0;i<bubbleCount;i++){
+  let b=bubbleStates[i];
+  if(!b)b=bubbleStates[i]={x:middle.x+(Math.random()-.5)*size.x*.86,z:middle.z+(Math.random()-.5)*size.z*.86,y:null,seed:Math.random()*20,r:.016+Math.random()*.014,age:0,seeded:bubbleStates.length>=bubbleCount};
+  b.age+=dt;
+  const x=b.x+Math.sin(b.age*2.2+b.seed)*.014,z=b.z+Math.cos(b.age*1.8+b.seed)*.014;
+  bubbleRay.set(new THREE.Vector3(x,bubbleBounds.min.y-.1,z),bubbleUp);
+  const hits=bubbleRay.intersectObject(jellyMesh,false),levels=[];
+  for(const hit of hits)if(!levels.length||hit.point.y-levels[levels.length-1]>.0001)levels.push(hit.point.y);
+  let low=0,high=0;
+  for(let j=0;j+1<levels.length;j+=2){if(levels[j+1]-levels[j]>.09){low=levels[j]+.035;high=levels[j+1]-.035;if(b.y!==null&&b.y>=low&&b.y<=high)break;}}
+  let radius=0,ring=0;
+  if(high>low){
+   if(b.y===null)b.y=low+(b.seeded?0:Math.random()*(high-low)*.9);
+   b.y+=dt*(.07+b.r*3); // World +Y, never the object's rotated local axis.
+   const t=THREE.MathUtils.clamp((b.y-low)/(high-low),0,1);
+   radius=b.r*(.65+t*.6);
+   if(b.y>=high){ring=radius*1.35;radius=0;bubbleStates[i]=null;}
+   else if(b.y<low){radius=0;bubbleStates[i]=null;}
+   bubbleTransform.position.set(x,Math.min(b.y,high),z);
+  }else bubbleStates[i]=null;
+  bubbleTransform.quaternion.copy(camera.quaternion);bubbleTransform.scale.setScalar(radius);bubbleTransform.updateMatrix();bubbleMesh.setMatrixAt(i,bubbleTransform.matrix);
+  bubbleTransform.scale.setScalar(ring);bubbleTransform.updateMatrix();popMesh.setMatrixAt(i,bubbleTransform.matrix);
+ }
+ jellyMaterial.side=oldSide;bubbleMesh.instanceMatrix.needsUpdate=true;popMesh.instanceMatrix.needsUpdate=true;
 }
 jellyGroup.position.set(0,0,0);
 const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
@@ -385,7 +390,7 @@ canvas.addEventListener('pointerdown', event => {
   dragOffset.copy(captured).sub(hit.point);
   capturedIndex=index; body.pin(skins[index],captured.toArray());
   activePointer=event.pointerId; canvas.setPointerCapture(activePointer);
-  canvas.style.cursor='grabbing';
+  canvas.style.cursor='grabbing';exciteFizz(.8);
 });
 canvas.addEventListener('pointermove', event => {
   if(event.pointerId !== activePointer)return;
@@ -396,6 +401,8 @@ canvas.addEventListener('pointermove', event => {
     hitPoint.add(dragOffset);
     // Follow the pointer continuously; a world-space ceiling made a stretched
     // jelly stop following the hand. The solver limits strain, not hand position.
+    const travel=hitPoint.distanceTo(new THREE.Vector3(...(body.grab.desired||body.grab.target)));
+    if(travel>.002)exciteFizz(Math.min(1,travel*4));
     body.grab.desired=hitPoint.toArray();
   }
 });
@@ -427,7 +434,7 @@ function updateViewControls(){
 }
 updateViewControls();
 for(const name of Object.keys(defaults))ui[name].addEventListener('input',()=>{syncOutputs();updateViewControls();});
-ui.nudge.addEventListener('click',()=>{release();body.nudge(settings.mass);});
+ui.nudge.addEventListener('click',()=>{release();body.nudge(settings.mass);exciteFizz(.8);});
 ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of Object.keys(defaults))ui[name].value=defaults[name];syncOutputs();updateViewControls();ui.autorotate.checked=true;ui.shadowToggle.checked=true;});
 const renderPoint=[0,0,0];
 let last=performance.now(),qualityFrames=0,qualityTime=0;
@@ -499,13 +506,13 @@ panelToggle.addEventListener('click',()=>{
 });
 // Locally synthesized fizz: no downloads, microphone or background playback.
 const soundToggle=document.getElementById('bubbleSound');let fizzContext,fizzGain,fizzTimer;
-function stopFizz(){clearInterval(fizzTimer);fizzTimer=null;if(fizzContext)fizzContext.suspend();}
+function stopFizz(){clearInterval(fizzTimer);fizzTimer=null;if(fizzContext){fizzGain.gain.cancelScheduledValues(fizzContext.currentTime);fizzGain.gain.setValueAtTime(0,fizzContext.currentTime);fizzContext.suspend();}}
 async function syncFizz(){
  if(!bubbleToggle.checked||!soundToggle.checked||document.hidden){stopFizz();return;}
  try{
  if(!fizzContext){
  const AudioEngine=window.AudioContext||window.webkitAudioContext;if(!AudioEngine)return;
- fizzContext=new AudioEngine();fizzGain=fizzContext.createGain();fizzGain.gain.value=.08;fizzGain.connect(fizzContext.destination);
+ fizzContext=new AudioEngine();fizzGain=fizzContext.createGain();fizzGain.gain.value=0;fizzGain.connect(fizzContext.destination);
  const buffer=fizzContext.createBuffer(1,fizzContext.sampleRate*2,fizzContext.sampleRate),data=buffer.getChannelData(0);
  for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*.15;
  const source=fizzContext.createBufferSource();source.buffer=buffer;source.loop=true;
@@ -519,3 +526,12 @@ async function syncFizz(){
  }catch{soundToggle.checked=false;stopFizz();}
 }
 bubbleToggle.addEventListener('change',syncFizz);soundToggle.addEventListener('change',syncFizz);document.addEventListener('visibilitychange',syncFizz);window.addEventListener('pagehide',stopFizz);
+
+function exciteFizz(strength){
+ if(!bubbleToggle.checked||!soundToggle.checked||document.hidden)return;
+ if(!fizzContext||fizzContext.state!=='running'){syncFizz().then(()=>{if(fizzContext?.state==='running')exciteFizz(strength);});return;}
+ const now=fizzContext.currentTime,gain=fizzGain.gain;
+ gain.cancelScheduledValues(now);gain.setTargetAtTime(.06+.13*strength,now,.045);
+ gain.setTargetAtTime(0,now+.13,.22);
+}
+
