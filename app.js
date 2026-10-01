@@ -1,17 +1,17 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=view-angle-20";
-import { shapeMapper } from "./shapes.js?v=view-angle-20";
+import { Jelly } from "./physics.js?v=view-opacity-21";
+import { shapeMapper } from "./shapes.js?v=view-opacity-21";
 
 const canvas = document.querySelector("#scene");
 
-const ui = Object.fromEntries(["mass", "firmness", "brightness", "zoom", "viewAngle", "massValue", "firmnessValue", "brightnessValue", "zoomValue", "viewAngleValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
-const defaults = { mass: 1.25, firmness: 0.06, brightness: 1, zoom: 1, viewAngle:45 };
+const ui = Object.fromEntries(["mass", "firmness", "brightness", "zoom", "viewAngle", "opacity", "photoScale", "massValue", "firmnessValue", "brightnessValue", "zoomValue", "viewAngleValue", "opacityValue", "photoScaleValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
+const defaults = { mass: 1.25, firmness: 0.06, brightness: 1, zoom: 1, viewAngle:45, opacity:50, photoScale:100 };
 const settings = { ...defaults, damping: .95 };
 function syncOutputs() {
   for (const name of Object.keys(defaults)) {
     settings[name] = Number(ui[name].value);
-    ui[name + "Value"].value = name==='viewAngle'?`${settings[name]}°`:settings[name].toFixed(2);
+    ui[name + "Value"].value = name==='viewAngle'?`${settings[name]}°`:['opacity','photoScale'].includes(name)?`${settings[name]}%`:settings[name].toFixed(2);
   }
 }
 syncOutputs();
@@ -56,6 +56,7 @@ const cameraFocus=new THREE.Vector3(0,-.8,0);
 function updateCameraPose(){
   const radius=2.9/(Math.tan(THREE.MathUtils.degToRad(17))*Math.min(camera.aspect,1));
   const angle=THREE.MathUtils.degToRad(settings.viewAngle);
+  camera.up.set(0,Math.cos(angle),-Math.sin(angle));
   camera.position.set(0,cameraFocus.y+Math.sin(angle)*radius,Math.cos(angle)*radius);
   camera.lookAt(cameraFocus);camera.zoom=settings.zoom;camera.updateProjectionMatrix();
 }
@@ -138,8 +139,9 @@ updatePhotoLayout=()=>{
   const ray=new THREE.Raycaster(),floor=new THREE.Plane(new THREE.Vector3(0,1,0),1.558),hits=[];
   // Cover the whole allowed orbit once; do not slide the photo as the view tilts.
   const probe=camera.clone(),radius=camera.position.distanceTo(cameraFocus);probe.zoom=.75;
-  for(const degrees of [30,45,60]){
+  for(const degrees of [0,15,30,45,60,75,90]){
     const angle=THREE.MathUtils.degToRad(degrees);
+    probe.up.set(0,Math.cos(angle),-Math.sin(angle));
     probe.position.set(0,cameraFocus.y+Math.sin(angle)*radius,Math.cos(angle)*radius);
     probe.lookAt(cameraFocus);probe.updateProjectionMatrix();probe.updateMatrixWorld(true);
     for(const x of [-1,1])for(const y of [-1,1]){
@@ -147,12 +149,13 @@ updatePhotoLayout=()=>{
       const hit=ray.ray.intersectPlane(floor,new THREE.Vector3());if(hit)hits.push(hit);
     }
   }
-  if(hits.length!==12)return;
+  if(hits.length<4)return;
   const minX=Math.min(...hits.map(p=>p.x)),maxX=Math.max(...hits.map(p=>p.x));
   const minZ=Math.min(...hits.map(p=>p.z)),maxZ=Math.max(...hits.map(p=>p.z));
-  const width=Math.max(maxX-minX,(maxZ-minZ)*photoAspect)*1.08;
-  photoFloor.scale.set(width,width/photoAspect,1);
-  photoFloor.position.set((minX+maxX)/2,-1.558,(minZ+maxZ)/2);
+  const width=Math.max(2*Math.max(Math.abs(minX),Math.abs(maxX)),2*Math.max(Math.abs(minZ),Math.abs(maxZ))*photoAspect)*1.08;
+  const scale=settings.photoScale/100;
+  photoFloor.scale.set(width*scale,width/photoAspect*scale,1);
+  photoFloor.position.set(0,-1.558,0);
 };
 backgroundInput.addEventListener('change',async()=>{
   const file=backgroundInput.files?.[0];if(!file)return;
@@ -220,14 +223,17 @@ for (let i = 0; i < indices.length; i += 3) {
 }
 const neighbors = links.map(set => [...set]);
 // Render the exit surface first. Standard screen-space transmission omits it.
+const jellyOpacity={value:.5};
 const rearMaterial = new THREE.MeshPhysicalMaterial({
   color:0x2f6bff, roughness:.025, metalness:0, side:THREE.BackSide,
   transparent:true, opacity:.08, depthWrite:true, envMapIntensity:1.3,
   clearcoat:.25, clearcoatRoughness:.025
 });
 rearMaterial.onBeforeCompile = shader => {
+  shader.uniforms.jellyOpacity=jellyOpacity;
+  shader.fragmentShader='uniform float jellyOpacity;\n'+shader.fragmentShader;
   shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
-    'diffuseColor.a = 0.025 + 0.28 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);\n#include <opaque_fragment>');
+    'diffuseColor.a = (0.025 + 0.28 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0))*jellyOpacity/0.5;\n#include <opaque_fragment>');
 };
 const rearMesh=new THREE.Mesh(jellyGeometry,rearMaterial);jellyGroup.add(rearMesh);
 const transmissionTint=new THREE.Color(0x2f6bff);
@@ -258,9 +264,10 @@ const windowBrightness={value:1};
 jellyMaterial.onBeforeCompile=shader=>{
   compileTransmission(shader);
   shader.uniforms.windowBrightness=windowBrightness;
+  shader.uniforms.jellyOpacity=jellyOpacity;
   shader.vertexShader='varying vec3 jellyWorldPosition;\n'+shader.vertexShader;
   shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\njellyWorldPosition=(modelMatrix*vec4(transformed,1.0)).xyz;');
-  shader.fragmentShader='uniform float windowBrightness;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
+  shader.fragmentShader='uniform float windowBrightness;\nuniform float jellyOpacity;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
   shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
     `// Add only the bright window panes. Changing their strength must not
      // increase clearcoat energy loss or deepen the transmitted rear surface.
@@ -282,7 +289,7 @@ jellyMaterial.onBeforeCompile=shader=>{
          outgoingLight+=vec3(1.0,0.98,0.94)*panes*windowBrightness*0.85;
        }
      #include <opaque_fragment>
-     gl_FragColor.a = 0.48 + 0.5 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);`);
+     gl_FragColor.a = jellyOpacity;`);
 };
 jellyMaterial.customProgramCacheKey=()=> 'jelly-window-highlight-v4';
 const jellyMesh=new THREE.Mesh(jellyGeometry,jellyMaterial);jellyGroup.add(jellyMesh);
@@ -362,6 +369,7 @@ function updateViewControls(){
   updatePhotoLayout();
   const b=settings.brightness;
   windowBrightness.value=b;
+  jellyOpacity.value=settings.opacity/100;
   // Keep transmission, rear shading and energy-conserving coat fixed.
   jellyMaterial.envMapIntensity=.35;rearMaterial.envMapIntensity=1.3;
   jellyMaterial.specularIntensity=.4;rearMaterial.specularIntensity=1;

@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Cormorant+Garamond:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=view-angle-20" />
+    <link rel="stylesheet" href="./styles.css?v=view-opacity-21" />
   </head>
   <body>
     <div class="page-shell">
@@ -43,8 +43,7 @@
 
           <label class="control-row"><span>반사광 밝기</span><input id="brightness" type="range" min="0" max="2.5" step="0.05" value="1" /><output id="brightnessValue">1.00</output></label>
 
-          <label class="control-row"><span>확대</span><input id="zoom" type="range" min="0.75" max="1.8" step="0.05" value="1" /><output id="zoomValue">1.00</output></label>
-          <label class="control-row"><span>시야 각도</span><input id="viewAngle" type="range" min="30" max="60" step="1" value="45" /><output id="viewAngleValue">45°</output></label>
+          <label class="control-row"><span>젤리 불투명도</span><input id="opacity" type="range" min="10" max="90" step="1" value="50" /><output id="opacityValue">50%</output></label>
 
           <div class="button-row">
             <button id="nudge" type="button">툭 치기</button>
@@ -55,10 +54,16 @@
             <label><input id="autorotate" type="checkbox" checked /> 느린 회전</label>
             <label><input id="shadowToggle" type="checkbox" checked /> 그림자</label>
           </div>
+          <section class="view-controls" aria-label="화면 보기">
+            <p class="eyebrow">화면 보기</p>
+            <label class="control-row"><span>확대</span><input id="zoom" type="range" min="0.75" max="1.8" step="0.05" value="1" /><output id="zoomValue">1.00</output></label>
+            <label class="control-row"><span>시야 각도</span><input id="viewAngle" type="range" min="0" max="90" step="1" value="45" /><output id="viewAngleValue">45°</output></label>
+          </section>
           <div class="background-controls">
             <label for="backgroundPhoto">배경 사진</label>
             <input id="backgroundPhoto" type="file" accept="image/jpeg,image/png,image/webp,image/avif" />
             <button id="backgroundReset" type="button" class="secondary" disabled>기본 배경</button>
+            <label class="control-row photo-scale"><span>사진 크기</span><input id="photoScale" type="range" min="25" max="200" step="5" value="100" /><output id="photoScaleValue">100%</output></label>
             <p id="backgroundStatus" role="status" aria-live="polite">사진을 선택하면 원근감이 자동으로 적용됩니다.</p>
           </div>
         </div>
@@ -66,6 +71,6 @@
     </div>
 
     <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.167.1/build/three.module.js"}}</script>
-    <script type="module" src="./app.js?v=view-angle-20"></script>
+    <script type="module" src="./app.js?v=view-opacity-21"></script>
   </body>
 </html>
