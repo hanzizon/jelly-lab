@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Cormorant+Garamond:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=view-opacity-21" />
+    <link rel="stylesheet" href="./styles.css?v=appearance-22" />
   </head>
   <body>
     <div class="page-shell">
@@ -21,11 +21,17 @@
       </main>
 
       <aside class="control-panel">
-        <div class="panel-card">
+        <button id="panelToggle" type="button" aria-expanded="true" aria-controls="settingsBody">설정 접기 ▾</button>
+        <div class="panel-card" id="settingsBody">
           <div class="panel-header">
             <p class="eyebrow">젤리 설정</p>
-            <span class="status-dot"></span>
+            <div class="appearance-options">
+              <span class="status-dot" aria-hidden="true"></span>
+              <input id="jellyColor" type="color" value="#2f6bff" aria-label="젤리 색상" title="젤리 색상" />
+              <label class="bubble-option"><input id="bubbles" type="checkbox" /> 기포</label>
+            </div>
           </div>
+          <label class="sound-option"><input id="bubbleSound" type="checkbox" checked /> 탄산 소리</label>
 
           <label class="shape-row">젤리 모양<select id="shape"><option value="cat">고양이</option><option value="vocal">보컬 캐릭터</option><option value="dj">DJ 캐릭터</option></select></label>
 
@@ -71,6 +77,6 @@
     </div>
 
     <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.167.1/build/three.module.js"}}</script>
-    <script type="module" src="./app.js?v=view-opacity-21"></script>
+    <script type="module" src="./app.js?v=appearance-22"></script>
   </body>
 </html>

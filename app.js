@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=view-opacity-21";
-import { shapeMapper } from "./shapes.js?v=view-opacity-21";
+import { Jelly } from "./physics.js?v=appearance-22";
+import { shapeMapper } from "./shapes.js?v=appearance-22";
 
 const canvas = document.querySelector("#scene");
 
@@ -155,7 +155,8 @@ updatePhotoLayout=()=>{
   const width=Math.max(2*Math.max(Math.abs(minX),Math.abs(maxX)),2*Math.max(Math.abs(minZ),Math.abs(maxZ))*photoAspect)*1.08;
   const scale=settings.photoScale/100;
   photoFloor.scale.set(width*scale,width/photoAspect*scale,1);
-  photoFloor.position.set(0,-1.558,0);
+  const center=body.frame().center;
+  photoFloor.position.set(center[0],-1.558,center[2]);
 };
 backgroundInput.addEventListener('change',async()=>{
   const file=backgroundInput.files?.[0];if(!file)return;
@@ -289,14 +290,18 @@ jellyMaterial.onBeforeCompile=shader=>{
          outgoingLight+=vec3(1.0,0.98,0.94)*panes*windowBrightness*0.85;
        }
      #include <opaque_fragment>
-     gl_FragColor.a = jellyOpacity;`);
+     float edgeGlow=pow(1.0-abs(dot(normal,normalize(vViewPosition))),2.0);
+     gl_FragColor.a = mix(jellyOpacity,max(jellyOpacity,0.62),edgeGlow);`);
 };
 jellyMaterial.customProgramCacheKey=()=> 'jelly-window-highlight-v4';
 const jellyMesh=new THREE.Mesh(jellyGeometry,jellyMaterial);jellyGroup.add(jellyMesh);
 const characterColors={vocal:0x162ae3,dj:0x3c458f};
+const colorInput=document.getElementById('jellyColor'),bubbleToggle=document.getElementById('bubbles');
+let customColor=null;
 function updateAppearance(kind,mapper){
   const isCharacter=kind==='vocal'||kind==='dj';
-  const base=new THREE.Color(isCharacter?characterColors[kind]:0x2f6bff),white=new THREE.Color(0xffffff);
+  const base=new THREE.Color(customColor||(isCharacter?characterColors[kind]:0x2f6bff)),white=new THREE.Color(0xffffff);
+  colorInput.value='#'+base.getHexString();
   transmissionTint.copy(base);rearMaterial.color.copy(base);
   ground.material.color.copy(isCharacter?base.clone().lerp(white,.5):white);
   rim.color.copy(isCharacter?base.clone().lerp(white,.82):new THREE.Color(0xbfd8ff));
@@ -305,13 +310,58 @@ function updateAppearance(kind,mapper){
 
 const initialMapper=shapeMapper('cat');
 let body = new Jelly(initialMapper);
+let bubbleMapper=initialMapper;
 let skins = points.map(p => body.skin(p.toArray(),initialMapper(p.toArray())));
 const shapeSelect=document.getElementById('shape');
 function changeShape(){
-  release();const mapper=shapeMapper(shapeSelect.value);body=new Jelly(mapper);
+  release();const mapper=shapeMapper(shapeSelect.value);body=new Jelly(mapper);bubbleMapper=mapper;buildBubblePaths();
   skins=points.map(p=>body.skin(p.toArray(),mapper(p.toArray())));updateAppearance(shapeSelect.value,mapper);resizeScene();
 }
 shapeSelect.addEventListener('change',changeShape);
+colorInput.addEventListener('input',()=>{customColor=colorInput.value;updateAppearance(shapeSelect.value,bubbleMapper);});
+// Bubbles are sampled from interior material coordinates, so they stay inside
+// the deforming volume. Paths are cached when the shape changes.
+const bubbleCount=28,bubbleSteps=48,bubblePaths=[];
+const bubbleMesh=new THREE.InstancedMesh(new THREE.SphereGeometry(1,16,12),new THREE.MeshPhysicalMaterial({color:0xffffff,roughness:.04,metalness:0,transparent:true,opacity:.8,depthWrite:false,envMapIntensity:2}),bubbleCount);
+const popMesh=new THREE.InstancedMesh(new THREE.TorusGeometry(1,.07,5,16),new THREE.MeshBasicMaterial({color:0xf1f8ff,transparent:true,opacity:.5,depthWrite:false}),bubbleCount);
+bubbleMesh.material.onBeforeCompile=shader=>{
+ shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',`#include <opaque_fragment>
+ float rim=pow(1.0-abs(dot(normal,normalize(vViewPosition))),2.0);
+ float gleam=pow(max(0.0,dot(normal,normalize(vec3(-.5,.7,.5)))),32.0);
+ gl_FragColor.rgb=mix(vec3(.08,.13,.24),vec3(1.0),smoothstep(.15,.65,rim))+gleam*1.8;
+ gl_FragColor.a=clamp(.07+rim*.75+gleam*.8,0.0,.95);`);
+};
+bubbleMesh.renderOrder=1;popMesh.renderOrder=1;jellyMesh.renderOrder=2;
+bubbleMesh.frustumCulled=false;popMesh.frustumCulled=false;scene.add(bubbleMesh,popMesh);
+const bubbleTransform=new THREE.Object3D(),bubbleA=[0,0,0],bubbleB=[0,0,0];let bubbleTime=0;
+function buildBubblePaths(){
+  bubblePaths.length=0;
+  for(let i=0;i<bubbleCount;i++){
+    const path=[],angle=i*2.399963,r=.18+.5*((i*7%17)/17);
+    for(let j=0;j<=bubbleSteps;j++){
+      const t=j/bubbleSteps,p=[Math.cos(angle)*r+Math.sin(t*11+i)*.085,-.36+t*.64,Math.sin(angle)*r+Math.cos(t*9+i)*.085];
+      path.push(body.skin(p,bubbleMapper(p)));
+    }bubblePaths.push(path);
+  }
+}
+buildBubblePaths();
+function updateBubbles(dt){
+  bubbleMesh.visible=popMesh.visible=bubbleToggle.checked;
+  if(!bubbleToggle.checked)return;
+  bubbleTime+=dt;
+  for(let i=0;i<bubbleCount;i++){
+    const phase=(bubbleTime/(3.6+(i%5)*.45)+i/bubbleCount)%1,t=Math.min(phase/.88,1);
+    const index=Math.min(bubbleSteps-1,Math.floor(t*bubbleSteps)),fraction=t*bubbleSteps-index;
+    body.renderSample(bubblePaths[i][index],bubbleA);body.renderSample(bubblePaths[i][index+1],bubbleB);
+    bubbleTransform.position.set(...bubbleA.map((v,k)=>v+(bubbleB[k]-v)*fraction));
+    bubbleTransform.quaternion.copy(camera.quaternion);
+    const radius=.022+.053*t,pop=Math.max(0,(phase-.88)/.12);
+    bubbleTransform.scale.setScalar(pop>0?0:radius);bubbleTransform.updateMatrix();bubbleMesh.setMatrixAt(i,bubbleTransform.matrix);
+    const ring=pop>0?radius*(1+pop*.8)*(1-pop*pop):0;
+    bubbleTransform.scale.setScalar(ring);bubbleTransform.updateMatrix();popMesh.setMatrixAt(i,bubbleTransform.matrix);
+  }
+  bubbleMesh.instanceMatrix.needsUpdate=true;popMesh.instanceMatrix.needsUpdate=true;
+}
 jellyGroup.position.set(0,0,0);
 const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
 const plane = new THREE.Plane(), hitPoint = new THREE.Vector3();
@@ -422,6 +472,8 @@ function animate(now){
   }
   positionAttr.needsUpdate=true;jellyGeometry.computeVertexNormals();jellyGeometry.computeBoundingSphere();
   const center=body.p.reduce((a,p)=>a.add(new THREE.Vector3(...p)),new THREE.Vector3()).multiplyScalar(1/body.p.length);
+  if(photoFloor.visible){photoFloor.position.x=center.x;photoFloor.position.z=center.z;}
+  updateBubbles(dt);
   ground.position.x=center.x;ground.position.z=center.z;
   ground.material.opacity=1/(1+Math.max(0,center.y+.97)*.65);ground.visible=ui.shadowToggle.checked;
   if(ui.autorotate.checked&&!body.grab){for(let i=0;i<body.p.length;i++){const p=body.p[i],a=dt*.025,x=p[0]-center.x,z=p[2]-center.z;p[0]=center.x+x*Math.cos(a)+z*Math.sin(a);p[2]=center.z+z*Math.cos(a)-x*Math.sin(a);}}
@@ -430,6 +482,8 @@ function animate(now){
     renderer.setRenderTarget(rearTarget);renderer.render(scene,camera);
   }
   jellyMesh.visible=true;rearMesh.visible=false;
+  // Draw the interior detail below the transparent front surface as well as its refraction.
+  bubbleMesh.visible=popMesh.visible=bubbleToggle.checked;
   renderer.setRenderTarget(frontTarget);renderer.render(scene,camera);
   renderer.setRenderTarget(null);renderer.render(outputScene,outputCamera);
 }
@@ -437,3 +491,31 @@ requestAnimationFrame(animate);
 
 
 
+
+const panelToggle=document.getElementById('panelToggle');
+panelToggle.addEventListener('click',()=>{
+ const closed=panelToggle.parentElement.classList.toggle('is-collapsed');
+ panelToggle.setAttribute('aria-expanded',String(!closed));panelToggle.textContent=closed?'젤리 설정 펼치기 ▴':'설정 접기 ▾';
+});
+// Locally synthesized fizz: no downloads, microphone or background playback.
+const soundToggle=document.getElementById('bubbleSound');let fizzContext,fizzGain,fizzTimer;
+function stopFizz(){clearInterval(fizzTimer);fizzTimer=null;if(fizzContext)fizzContext.suspend();}
+async function syncFizz(){
+ if(!bubbleToggle.checked||!soundToggle.checked||document.hidden){stopFizz();return;}
+ try{
+ if(!fizzContext){
+ const AudioEngine=window.AudioContext||window.webkitAudioContext;if(!AudioEngine)return;
+ fizzContext=new AudioEngine();fizzGain=fizzContext.createGain();fizzGain.gain.value=.08;fizzGain.connect(fizzContext.destination);
+ const buffer=fizzContext.createBuffer(1,fizzContext.sampleRate*2,fizzContext.sampleRate),data=buffer.getChannelData(0);
+ for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*.15;
+ const source=fizzContext.createBufferSource();source.buffer=buffer;source.loop=true;
+ const filter=fizzContext.createBiquadFilter();filter.type='highpass';filter.frequency.value=2800;source.connect(filter);filter.connect(fizzGain);source.start();
+ }
+ await fizzContext.resume();if(fizzTimer)return;
+ fizzTimer=setInterval(()=>{if(fizzContext.state!=='running')return;const now=fizzContext.currentTime,osc=fizzContext.createOscillator(),gain=fizzContext.createGain();
+ osc.frequency.setValueAtTime(900+Math.random()*2100,now);osc.frequency.exponentialRampToValueAtTime(450,now+.035);
+ gain.gain.setValueAtTime(.001,now);gain.gain.linearRampToValueAtTime(.12+Math.random()*.15,now+.003);gain.gain.exponentialRampToValueAtTime(.001,now+.045);
+ osc.connect(gain);gain.connect(fizzGain);osc.start(now);osc.stop(now+.05);osc.onended=()=>{osc.disconnect();gain.disconnect();};},95);
+ }catch{soundToggle.checked=false;stopFizz();}
+}
+bubbleToggle.addEventListener('change',syncFizz);soundToggle.addEventListener('change',syncFizz);document.addEventListener('visibilitychange',syncFizz);window.addEventListener('pagehide',stopFizz);
