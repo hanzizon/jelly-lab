@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=lighting-26";
-import { shapeMapper } from "./shapes.js?v=lighting-26";
+import { Jelly } from "./physics.js?v=night-glow-27";
+import { shapeMapper } from "./shapes.js?v=night-glow-27";
 
 const canvas = document.querySelector("#scene");
 
@@ -289,12 +289,30 @@ jellyMaterial.onBeforeCompile=shader=>{
          vec2 pane=fract(windowUv*vec2(2.0,3.0));
          vec2 bars=smoothstep(vec2(0.035),vec2(0.055)+edgeWidth,pane)*(1.0-smoothstep(vec2(0.945)-edgeWidth,vec2(0.965),pane));
          float panes=outer.x*outer.y*bars.x*bars.y*step(0.0,windowT);
+         vec3 reflectedScene=reflectionColor;
          if(lightingMode>1.5){
-           float moon=1.0-smoothstep(.16,.18,length((windowUv-vec2(.5))*vec2(1.0,1.22)));
-           panes=moon*step(0.0,windowT);
+           vec2 sky=windowUv*vec2(1.0,1.22);
+           float moon=1.0-smoothstep(.095,.105,length(sky-vec2(.68,.88)));
+           vec2 cell=floor(windowUv*vec2(11.0,14.0)),local=fract(windowUv*vec2(11.0,14.0));
+           float seed=fract(sin(dot(cell,vec2(127.1,311.7)))*43758.5453);
+           vec2 starPosition=vec2(fract(seed*17.1),fract(seed*31.7))*.6+.2;
+           float starRadius=.025+seed*.035;
+           float aa=max(length(fwidth(windowUv*vec2(11.0,14.0))),.012);
+           float stars=(1.0-smoothstep(starRadius,starRadius+aa,length(local-starPosition)))*step(.58,seed);
+           reflectedScene=vec3(.025,.045,.13)+vec3(.7,.85,1.0)*(stars*2.2+moon*1.8);
+         }else if(lightingMode>.5){
+           vec2 sunPoint=(windowUv-vec2(.52,.42))*vec2(1.0,1.22);
+           float sun=1.0-smoothstep(.115,.125,length(sunPoint));
+           float halo=exp(-length(sunPoint)*8.0);
+           reflectedScene=mix(vec3(.8,.07,.035),vec3(1.0,.42,.09),1.0-windowUv.y)+vec3(1.0,.7,.3)*(sun*1.5+halo*.35);
          }
-         outgoingLight+=reflectionColor*panes*windowBrightness*0.85;
+         outgoingLight+=reflectedScene*panes*windowBrightness*0.85;
        }
+     if(lightingMode>1.5){
+       float luminousRim=pow(1.0-abs(dot(normal,normalize(vViewPosition))),1.4);
+       vec3 luminousColor=mix(attenuationColor,vec3(.22,.65,1.0),.35);
+       outgoingLight+=luminousColor*(.45+luminousRim*.9);
+     }
      if(hologram>0.5){
        float facing=abs(dot(normal,normalize(vViewPosition)));
        float angle=dot(windowRay,normalize(vec3(-.4,.8,-.5)));
@@ -606,3 +624,4 @@ function applyLightingMood(){
 lightingSelect.addEventListener('change',applyLightingMood);
 for(const name of Object.keys(defaults))ui[name].addEventListener('input',applyLightingMood);
 for(const element of [shapeSelect,colorInput,rainbowColor,document.getElementById('resetColor'),ui.reset])element.addEventListener(element===shapeSelect?'change':element===colorInput?'input':'click',applyLightingMood);
+
