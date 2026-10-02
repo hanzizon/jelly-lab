@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=hologram-25";
-import { shapeMapper } from "./shapes.js?v=hologram-25";
+import { Jelly } from "./physics.js?v=lighting-26";
+import { shapeMapper } from "./shapes.js?v=lighting-26";
 
 const canvas = document.querySelector("#scene");
 
@@ -262,14 +262,15 @@ jellyMaterial.onBeforeCompile = shader => {
 };
 const compileTransmission=jellyMaterial.onBeforeCompile;
 const windowBrightness={value:1},hologram={value:0};
+const lightingMode={value:0},reflectionColor={value:new THREE.Color(1,.98,.94)};
 jellyMaterial.onBeforeCompile=shader=>{
   compileTransmission(shader);
   shader.uniforms.windowBrightness=windowBrightness;
-  shader.uniforms.hologram=hologram;
+  shader.uniforms.hologram=hologram;shader.uniforms.lightingMode=lightingMode;shader.uniforms.reflectionColor=reflectionColor;
   shader.uniforms.jellyOpacity=jellyOpacity;
   shader.vertexShader='varying vec3 jellyWorldPosition;\n'+shader.vertexShader;
   shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\njellyWorldPosition=(modelMatrix*vec4(transformed,1.0)).xyz;');
-  shader.fragmentShader='uniform float hologram;\nuniform float windowBrightness;\nuniform float jellyOpacity;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
+  shader.fragmentShader='uniform float lightingMode;\nuniform vec3 reflectionColor;\nuniform float hologram;\nuniform float windowBrightness;\nuniform float jellyOpacity;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
   shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
     `// Add only the bright window panes. Changing their strength must not
      // increase clearcoat energy loss or deepen the transmitted rear surface.
@@ -288,7 +289,11 @@ jellyMaterial.onBeforeCompile=shader=>{
          vec2 pane=fract(windowUv*vec2(2.0,3.0));
          vec2 bars=smoothstep(vec2(0.035),vec2(0.055)+edgeWidth,pane)*(1.0-smoothstep(vec2(0.945)-edgeWidth,vec2(0.965),pane));
          float panes=outer.x*outer.y*bars.x*bars.y*step(0.0,windowT);
-         outgoingLight+=vec3(1.0,0.98,0.94)*panes*windowBrightness*0.85;
+         if(lightingMode>1.5){
+           float moon=1.0-smoothstep(.16,.18,length((windowUv-vec2(.5))*vec2(1.0,1.22)));
+           panes=moon*step(0.0,windowT);
+         }
+         outgoingLight+=reflectionColor*panes*windowBrightness*0.85;
        }
      if(hologram>0.5){
        float facing=abs(dot(normal,normalize(vViewPosition)));
@@ -566,3 +571,38 @@ function exciteFizz(strength){
 const rainbowColor=document.getElementById('rainbowColor');
 rainbowColor.addEventListener('click',()=>{hologram.value=hologram.value?0:1;rainbowColor.setAttribute('aria-pressed',String(Boolean(hologram.value)));updateAppearance(shapeSelect.value,bubbleMapper);});
 document.getElementById('resetColor').addEventListener('click',()=>{customColor=null;hologram.value=0;rainbowColor.setAttribute('aria-pressed','false');updateAppearance(shapeSelect.value,bubbleMapper);});
+
+const lightingSelect=document.getElementById('lightingMood');
+const themeFloorMaterial=new THREE.ShaderMaterial({uniforms:{mode:lightingMode},vertexShader:`
+ varying vec3 floorWorld;void main(){floorWorld=(modelMatrix*vec4(position,1.0)).xyz;gl_Position=projectionMatrix*viewMatrix*vec4(floorWorld,1.0);}`,fragmentShader:`
+ uniform float mode;varying vec3 floorWorld;
+ float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+ void main(){
+ float depth=smoothstep(-14.0,9.0,floorWorld.z);
+ vec3 sunset=mix(vec3(.32,.065,.10),vec3(.98,.34,.13),depth);
+ sunset+=vec3(.5,.22,.045)*exp(-length(floorWorld.xz-vec2(-3.0,-4.0))*.19);
+ vec3 night=mix(vec3(.015,.025,.085),vec3(.045,.075,.18),depth);
+ vec2 cell=floor(floorWorld.xz*1.25),local=fract(floorWorld.xz*1.25);
+ vec2 point=vec2(hash(cell),hash(cell+32.1))*.7+.15;
+ float star=(1.0-smoothstep(.007,.024,length(local-point)))*step(.81,hash(cell+61.7));
+ night+=vec3(.6,.75,1.0)*star;
+ float moon=1.0-smoothstep(.5,.55,length(floorWorld.xz-vec2(-3.5,-6.0)));
+ night+=vec3(.65,.78,1.0)*moon;
+ vec3 color=mode>1.5?night:sunset;gl_FragColor=vec4(color,1.0);
+ #include <tonemapping_fragment>
+ #include <colorspace_fragment>
+ }`});
+const daylightFloorMaterial=floorMesh.material;
+function applyLightingMood(){
+ const mood=lightingSelect.value;lightingMode.value=mood==='sunset'?1:mood==='night'?2:0;
+ floorMesh.material=lightingMode.value?themeFloorMaterial:daylightFloorMaterial;
+ scene.background.set(mood==='sunset'?0xb94e48:mood==='night'?0x080f2b:0xeef2f7);
+ reflectionColor.value.set(mood==='sunset'?0xffac63:mood==='night'?0xbad7ff:0xfffaf0);
+ key.color.set(mood==='sunset'?0xff9c62:mood==='night'?0x718bda:0xffffff);
+ rim.color.set(mood==='sunset'?0xffd0a0:mood==='night'?0x91baff:0xbfd8ff);
+ jellyMaterial.envMapIntensity=mood==='night'?.12:.35;rearMaterial.envMapIntensity=mood==='night'?.35:1.3;
+ document.body.dataset.lighting=mood;
+}
+lightingSelect.addEventListener('change',applyLightingMood);
+for(const name of Object.keys(defaults))ui[name].addEventListener('input',applyLightingMood);
+for(const element of [shapeSelect,colorInput,rainbowColor,document.getElementById('resetColor'),ui.reset])element.addEventListener(element===shapeSelect?'change':element===colorInput?'input':'click',applyLightingMood);
