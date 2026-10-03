@@ -21,8 +21,17 @@ const bangsDJ=[[-.72,-.69],[-.54,-1.03],[.03,-1.12],[.53,-.91],[.73,-.52],[.55,-
 const bangsVocal=[[-.72,-.47],[-.64,-.92],[-.3,-1.13],[.21,-1.1],[.61,-.87],[.71,-.14],[.5,-.3],[.38,-.63],[.18,-.44],[-.11,-.34],[-.46,-.37],[-.51,-.07]];
 // Rounded face and two ears only; no facial relief on the cat soap shape.
 const catOutline=[[-.98,.04],[-.96,-.22],[-.87,-.46],[-.85,-.86],[-.82,-1.02],[-.76,-1.06],[-.67,-1.02],[-.39,-.78],[-.2,-.81],[0,-.82],[.2,-.81],[.39,-.78],[.67,-1.02],[.76,-1.06],[.82,-1.02],[.85,-.86],[.87,-.46],[.96,-.22],[.98,.04],[.94,.32],[.79,.56],[.55,.73],[.28,.83],[0,.86],[-.28,.83],[-.55,.73],[-.79,.56],[-.94,.32]];
+// Smooth closed cubic outline: keep the ears, replace straight cheek/chin edges.
+const roundedCatOutline=[];
+for(let i=0;i<catOutline.length;i++){
+ const n=catOutline.length,p0=catOutline[(i+n-1)%n],p1=catOutline[i],p2=catOutline[(i+1)%n],p3=catOutline[(i+2)%n];
+ for(let step=0;step<12;step++){
+  const t=step/12,t2=t*t,t3=t2*t;
+  roundedCatOutline.push([0,1].map(k=>.5*((2*p1[k])+(-p0[k]+p2[k])*t+(2*p0[k]-5*p1[k]+4*p2[k]-p3[k])*t2+(-p0[k]+3*p1[k]-3*p2[k]+p3[k])*t3)));
+ }
+}
 function silhouette(x,z,kind){
-  if(kind==='cat')return polygon(x,z,catOutline);
+  if(kind==='cat')return polygon(x,z,roundedCatOutline);
   let d=ellipse(x,z,0,-.38,.76,.78);
   if(kind==='vocal'){
     d=Math.min(d,ellipse(x,z,-.57,.31,.23,.64),ellipse(x,z,.57,.31,.23,.64),ellipse(x,z,0,.67,.43,.42),ellipse(x,z,-.23,.99,.25,.2),ellipse(x,z,.23,.99,.25,.2),ellipse(x,z,-.4,-1.09,.29,.15));
