@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Cormorant+Garamond:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=star-twinkle-31" />
+    <link rel="stylesheet" href="./styles.css?v=held-motion-32" />
   </head>
   <body>
     <div class="page-shell">
@@ -66,7 +66,7 @@
             <label class="control-row"><span>확대</span><input id="zoom" type="range" min="0.75" max="1.8" step="0.05" value="1" /><output id="zoomValue">1.00</output></label>
             <label class="control-row"><span>시야 각도</span><input id="viewAngle" type="range" min="0" max="90" step="1" value="45" /><output id="viewAngleValue">45°</output></label>
           </section>
-          <label class="shape-row lighting-row">배경 조명<select id="lightingMood"><option value="day">기본 · 창문빛</option><option value="sunset">석양 · 주황빛</option><option value="night">별밤 · 달빛</option></select></label>
+          <label class="shape-row lighting-row">배경 조명<select id="lightingMood"><option value="day">기본 · 창문빛</option><option value="sunset">석양 · 주황빛</option><option value="night" selected>별밤 · 달빛</option></select></label>
           <div class="background-controls">
             <label for="backgroundPhoto">배경 사진</label>
             <input id="backgroundPhoto" type="file" accept="image/jpeg,image/png,image/webp,image/avif" />
@@ -79,6 +79,6 @@
     </div>
 
     <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.167.1/build/three.module.js"}}</script>
-    <script type="module" src="./app.js?v=star-twinkle-31"></script>
+    <script type="module" src="./app.js?v=held-motion-32"></script>
   </body>
 </html>

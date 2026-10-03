@@ -197,11 +197,26 @@ export class Jelly {
         }
         if(!repaired)break;
       }
+      let backtracks=0;
       for(let attempt=0;attempt<8;attempt++){
         let folded=false;
         for(const t of this.tets)if(t.volume>1e-7&&this.volume(t.q)<t.volume*.08){folded=true;break;}
         if(!folded)break;
+        backtracks++;
         for(let i=0;i<this.p.length;i++)for(let k=0;k<3;k++)this.p[i][k]=(this.p[i][k]+old[i][k])*.5;
+      }
+      // A previously compressed cell can make every backtracking step fail.
+      // Relax only this residual unsafe strain toward a rigid rest frame,
+      // so the next step can respond to gravity and hand motion again.
+      const unsafe=()=>this.tets.some(t=>t.volume>1e-7&&this.volume(t.q)<t.volume*.08);
+      if(backtracks>=4||unsafe()){
+        const f=this.frame();
+        const safe=this.rest.map(p=>[0,1,2].map(k=>f.center[k]+p.reduce((sum,v,j)=>sum+f.rotation[k*3+j]*(v-f.restCenter[j]),0)));
+        const compressed=()=>this.tets.some(t=>t.volume>1e-7&&this.volume(t.q)<t.volume*.16);
+        for(let pass=0;pass<24&&(pass===0||compressed());pass++){
+          const blend=pass===23?1:.12;
+          for(let i=0;i<this.p.length;i++)for(let k=0;k<3;k++)this.p[i][k]+=(safe[i][k]-this.p[i][k])*blend;
+        }
       }
       // At the stretch limit carry the body with the pointer rather than
       // detaching the visible pinch. Translation preserves the safe volume.
