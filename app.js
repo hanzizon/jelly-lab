@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=night-soft-30";
-import { shapeMapper } from "./shapes.js?v=night-soft-30";
+import { Jelly } from "./physics.js?v=star-twinkle-31";
+import { shapeMapper } from "./shapes.js?v=star-twinkle-31";
 
 const canvas = document.querySelector("#scene");
 
@@ -262,15 +262,16 @@ jellyMaterial.onBeforeCompile = shader => {
 };
 const compileTransmission=jellyMaterial.onBeforeCompile;
 const windowBrightness={value:1},hologram={value:0};
+const starTime={value:0};
 const lightingMode={value:0},reflectionColor={value:new THREE.Color(1,.98,.94)};
 jellyMaterial.onBeforeCompile=shader=>{
   compileTransmission(shader);
   shader.uniforms.windowBrightness=windowBrightness;
-  shader.uniforms.hologram=hologram;shader.uniforms.lightingMode=lightingMode;shader.uniforms.reflectionColor=reflectionColor;
+  shader.uniforms.starTime=starTime;shader.uniforms.hologram=hologram;shader.uniforms.lightingMode=lightingMode;shader.uniforms.reflectionColor=reflectionColor;
   shader.uniforms.jellyOpacity=jellyOpacity;
   shader.vertexShader='varying vec3 jellyWorldPosition;\n'+shader.vertexShader;
   shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\njellyWorldPosition=(modelMatrix*vec4(transformed,1.0)).xyz;');
-  shader.fragmentShader='uniform float lightingMode;\nuniform vec3 reflectionColor;\nuniform float hologram;\nuniform float windowBrightness;\nuniform float jellyOpacity;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
+  shader.fragmentShader='uniform float starTime;\nuniform float lightingMode;\nuniform vec3 reflectionColor;\nuniform float hologram;\nuniform float windowBrightness;\nuniform float jellyOpacity;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
   shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
     `// Add only the bright window panes. Changing their strength must not
      // increase clearcoat energy loss or deepen the transmitted rear surface.
@@ -298,12 +299,14 @@ jellyMaterial.onBeforeCompile=shader=>{
            vec2 cell=floor(windowUv*vec2(11.0,14.0)),local=fract(windowUv*vec2(11.0,14.0));
            float seed=fract(sin(dot(cell,vec2(127.1,311.7)))*43758.5453);
            vec2 starPosition=vec2(fract(seed*17.1),fract(seed*31.7))*.6+.2;
-           float starRadius=.025+seed*.035;
+           float starRadius=.010+seed*.008;
            float aa=max(length(fwidth(windowUv*vec2(11.0,14.0))),.012);
            float starDistance=length(local-starPosition);
-           float stars=(1.0-smoothstep(starRadius*.5,starRadius+aa+.035,starDistance))*step(.58,seed);
-           float starHalo=exp(-starDistance*starDistance/.012)*step(.58,seed);
-           reflectedScene=vec3(.025,.045,.13)+vec3(.7,.85,1.0)*(stars*1.9+starHalo*.55+moon*1.65+moonHalo*.4);
+           float stars=(1.0-smoothstep(max(0.0,starRadius-aa*.5),starRadius+aa*.5,starDistance))*step(.58,seed);
+           float flicker=.5+.5*sin(starTime*(.65+seed*1.7)+seed*73.0+sin(starTime*.37+seed*29.0)*2.0);
+           float sparkle=.22+1.8*pow(flicker,3.0+seed*5.0);
+           float starHalo=exp(-starDistance*starDistance/.0012)*step(.58,seed);
+           reflectedScene=vec3(.025,.045,.13)+vec3(.7,.85,1.0)*((stars*1.9+starHalo*.35)*sparkle+moon*1.65+moonHalo*.4);
          }else if(lightingMode>.5){
            vec2 sunPoint=(windowUv-vec2(.52,.42))*vec2(1.0,1.22);
            float sun=1.0-smoothstep(.115,.125,length(sunPoint));
@@ -501,6 +504,7 @@ ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of 
 const renderPoint=[0,0,0];
 let last=performance.now(),qualityFrames=0,qualityTime=0;
 function animate(now){
+  starTime.value=now*.001;
   requestAnimationFrame(animate);
   const dt=Math.max(.0001,Math.min((now-last)/1000,.15));last=now;
   // Only lower resolution after a sustained slow interval; never alternate sizes.
