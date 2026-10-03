@@ -86,7 +86,7 @@ export class Jelly {
     // Smooth local compliance lets the neck stretch without a hard seam.
     for(const e of this.edges){
       const d2=this.rest[e.i].reduce((sum,v,k)=>sum+((v+this.rest[e.j][k])*.5-s.surfacePoint[k])**2,0);
-      e.pinchCompliance=1+3*Math.exp(-d2/1.2);
+      e.pinchCompliance=1+3.35*Math.exp(-d2/1.2);
     }
   }
   frame(){

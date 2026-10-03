@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=night-glow-27";
-import { shapeMapper } from "./shapes.js?v=night-glow-27";
+import { Jelly } from "./physics.js?v=refinement-28";
+import { shapeMapper } from "./shapes.js?v=refinement-28";
 
 const canvas = document.querySelector("#scene");
 
@@ -365,8 +365,9 @@ bubbleMesh.material.onBeforeCompile=shader=>{
 };
 bubbleMesh.renderOrder=1;popMesh.renderOrder=1;jellyMesh.renderOrder=2;
 bubbleMesh.frustumCulled=false;popMesh.frustumCulled=false;scene.add(bubbleMesh,popMesh);
-const bubbleTransform=new THREE.Object3D(),bubbleRay=new THREE.Raycaster(),bubbleStates=[];
-const bubbleBounds=new THREE.Box3(),bubbleUp=new THREE.Vector3(0,1,0);
+const bubbleTransform=new THREE.Object3D(),bubbleStates=[];
+const bubbleBins=Array.from({length:256},()=>[]),bubbleTriangles=[];
+const bubbleBounds=new THREE.Box3();
 function buildBubblePaths(){bubbleStates.length=0;}
 buildBubblePaths();
 function updateBubbles(dt){
@@ -375,20 +376,24 @@ function updateBubbles(dt){
  jellyGeometry.computeBoundingBox();bubbleBounds.copy(jellyGeometry.boundingBox);
  const size=bubbleBounds.getSize(new THREE.Vector3()),middle=bubbleBounds.getCenter(new THREE.Vector3());
  // Bin projected triangles once, instead of raycasting the whole mesh per bubble.
- const bins=Array.from({length:256},()=>[]),positions=jellyGeometry.attributes.position,index=jellyGeometry.index;
+ const bins=bubbleBins,positions=jellyGeometry.attributes.position,index=jellyGeometry.index;
+ for(const bin of bins)bin.length=0;
  const gx=x=>Math.max(0,Math.min(15,Math.floor((x-bubbleBounds.min.x)/Math.max(size.x,.001)*16)));
  const gz=z=>Math.max(0,Math.min(15,Math.floor((z-bubbleBounds.min.z)/Math.max(size.z,.001)*16)));
  for(let f=0;f<(index?index.count:positions.count);f+=3){
- const ids=[0,1,2].map(k=>index?index.getX(f+k):f+k),xs=ids.map(i=>positions.getX(i)),zs=ids.map(i=>positions.getZ(i));
+ let triangle=bubbleTriangles[f/3];
+ if(!triangle)triangle=bubbleTriangles[f/3]={xs:[0,0,0],ys:[0,0,0],zs:[0,0,0],determinant:0};
+ const {xs,ys,zs}=triangle;
+ for(let k=0;k<3;k++){const id=index?index.getX(f+k):f+k;xs[k]=positions.getX(id);ys[k]=positions.getY(id);zs[k]=positions.getZ(id);}
  const determinant=(zs[1]-zs[2])*(xs[0]-xs[2])+(xs[2]-xs[1])*(zs[0]-zs[2]);if(Math.abs(determinant)<1e-10)continue;
- const triangle={xs,zs,ys:ids.map(i=>positions.getY(i)),determinant};
+ triangle.determinant=determinant;
  for(let z=gz(Math.min(...zs));z<=gz(Math.max(...zs));z++)for(let x=gx(Math.min(...xs));x<=gx(Math.max(...xs));x++)bins[z*16+x].push(triangle);
  }
  for(let i=0;i<bubbleCount;i++){
   const activity=i<18?1:THREE.MathUtils.smoothstep(bubbleExcitement,(i-18)/20,(i-18)/20+.22);
   if(activity<.005){bubbleStates[i]=null;bubbleTransform.scale.setScalar(0);bubbleTransform.updateMatrix();bubbleMesh.setMatrixAt(i,bubbleTransform.matrix);popMesh.setMatrixAt(i,bubbleTransform.matrix);continue;}
   let b=bubbleStates[i];
-  if(!b)b=bubbleStates[i]={x:middle.x+(Math.random()-.5)*size.x*.86,z:middle.z+(Math.random()-.5)*size.z*.86,y:null,seed:Math.random()*20,r:.016+Math.random()*.014,age:0,seeded:bubbleStates.length>=bubbleCount};
+  if(!b)b=bubbleStates[i]={x:middle.x+(Math.random()-.5)*size.x*.86,z:middle.z+(Math.random()-.5)*size.z*.86,y:null,seed:Math.random()*20,r:.016+Math.random()*.014,age:0,seeded:bubbleStates.length>=18,popAge:0};
   b.age+=dt;
   const x=b.x+Math.sin(b.age*2.2+b.seed)*.014,z=b.z+Math.cos(b.age*1.8+b.seed)*.014;
   const intersections=[];
@@ -404,10 +409,14 @@ function updateBubbles(dt){
   let radius=0,ring=0;
   if(high>low){
    if(b.y===null)b.y=low+(b.seeded?0:Math.random()*(high-low)*.9);
-   b.y+=dt*(.07+b.r*3); // World +Y, never the object's rotated local axis.
+   b.y+=dt*(.055+b.r*4)*(1+.18*Math.sin(b.age*1.3+b.seed)); // World +Y, never the object's rotated local axis.
    const t=THREE.MathUtils.clamp((b.y-low)/(high-low),0,1);
-   radius=Math.min(.055,b.r*(.65+t*.6)*(1+bubbleExcitement*.65),(high-low)*.2)*activity;
-   if(b.y>=high){ring=radius*1.35;radius=0;bubbleStates[i]=null;}
+   radius=Math.min(.055,b.r*(.65+t*.6)*(1+bubbleExcitement*.65),(high-low)*.2)*activity*(b.seeded?THREE.MathUtils.smoothstep(b.age,0,.18):1);
+   if(b.y>=high){
+    b.popAge+=dt;const fade=THREE.MathUtils.clamp(b.popAge/.14,0,1);
+    ring=radius*(1+fade*.5)*(1-fade);radius*=Math.pow(1-fade,2);b.y=high;
+    if(fade>=1)bubbleStates[i]=null;
+   }
    else if(b.y<low){radius=0;bubbleStates[i]=null;}
    bubbleTransform.position.set(x,Math.min(b.y,high),z);
   }else bubbleStates[i]=null;
