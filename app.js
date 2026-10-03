@@ -1,12 +1,12 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=cat-round-29";
-import { shapeMapper } from "./shapes.js?v=cat-round-29";
+import { Jelly } from "./physics.js?v=night-soft-30";
+import { shapeMapper } from "./shapes.js?v=night-soft-30";
 
 const canvas = document.querySelector("#scene");
 
 const ui = Object.fromEntries(["mass", "firmness", "brightness", "zoom", "viewAngle", "opacity", "photoScale", "massValue", "firmnessValue", "brightnessValue", "zoomValue", "viewAngleValue", "opacityValue", "photoScaleValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
-const defaults = { mass: 1.25, firmness: 0.06, brightness: 1, zoom: 1, viewAngle:45, opacity:50, photoScale:100 };
+const defaults = { mass: 1.25, firmness: 0.2, brightness: 1, zoom: 1, viewAngle:45, opacity:60, photoScale:100 };
 const settings = { ...defaults, damping: .95 };
 function syncOutputs() {
   for (const name of Object.keys(defaults)) {
@@ -292,14 +292,18 @@ jellyMaterial.onBeforeCompile=shader=>{
          vec3 reflectedScene=reflectionColor;
          if(lightingMode>1.5){
            vec2 sky=windowUv*vec2(1.0,1.22);
-           float moon=1.0-smoothstep(.095,.105,length(sky-vec2(.68,.88)));
+           float moonDistance=length(sky-vec2(.68,.88));
+           float moon=1.0-smoothstep(.075,.125,moonDistance);
+           float moonHalo=exp(-moonDistance*moonDistance/0.025);
            vec2 cell=floor(windowUv*vec2(11.0,14.0)),local=fract(windowUv*vec2(11.0,14.0));
            float seed=fract(sin(dot(cell,vec2(127.1,311.7)))*43758.5453);
            vec2 starPosition=vec2(fract(seed*17.1),fract(seed*31.7))*.6+.2;
            float starRadius=.025+seed*.035;
            float aa=max(length(fwidth(windowUv*vec2(11.0,14.0))),.012);
-           float stars=(1.0-smoothstep(starRadius,starRadius+aa,length(local-starPosition)))*step(.58,seed);
-           reflectedScene=vec3(.025,.045,.13)+vec3(.7,.85,1.0)*(stars*2.2+moon*1.8);
+           float starDistance=length(local-starPosition);
+           float stars=(1.0-smoothstep(starRadius*.5,starRadius+aa+.035,starDistance))*step(.58,seed);
+           float starHalo=exp(-starDistance*starDistance/.012)*step(.58,seed);
+           reflectedScene=vec3(.025,.045,.13)+vec3(.7,.85,1.0)*(stars*1.9+starHalo*.55+moon*1.65+moonHalo*.4);
          }else if(lightingMode>.5){
            vec2 sunPoint=(windowUv-vec2(.52,.42))*vec2(1.0,1.22);
            float sun=1.0-smoothstep(.115,.125,length(sunPoint));
@@ -311,7 +315,7 @@ jellyMaterial.onBeforeCompile=shader=>{
      if(lightingMode>1.5){
        float luminousRim=pow(1.0-abs(dot(normal,normalize(vViewPosition))),1.4);
        vec3 luminousColor=mix(attenuationColor,vec3(.22,.65,1.0),.35);
-       outgoingLight+=luminousColor*(.45+luminousRim*.9);
+       outgoingLight+=luminousColor*(.58+luminousRim*1.08);
      }
      if(hologram>0.5){
        float facing=abs(dot(normal,normalize(vViewPosition)));
