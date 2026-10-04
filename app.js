@@ -1,12 +1,12 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=held-motion-32";
-import { shapeMapper } from "./shapes.js?v=held-motion-32";
+import { Jelly } from "./physics.js?v=sky-glow-33";
+import { shapeMapper } from "./shapes.js?v=sky-glow-33";
 
 const canvas = document.querySelector("#scene");
 
 const ui = Object.fromEntries(["mass", "firmness", "brightness", "zoom", "viewAngle", "opacity", "photoScale", "massValue", "firmnessValue", "brightnessValue", "zoomValue", "viewAngleValue", "opacityValue", "photoScaleValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
-const defaults = { mass: 1.25, firmness: 0.2, brightness: 1, zoom: 1, viewAngle:45, opacity:60, photoScale:100 };
+const defaults = { mass: 1.25, firmness: 0.2, brightness: 1.5, zoom: 1, viewAngle:45, opacity:60, photoScale:100 };
 const settings = { ...defaults, damping: .95 };
 function syncOutputs() {
   for (const name of Object.keys(defaults)) {
@@ -295,7 +295,7 @@ jellyMaterial.onBeforeCompile=shader=>{
            vec2 sky=windowUv*vec2(1.0,1.22);
            float moonDistance=length(sky-vec2(.68,.88));
            float moon=1.0-smoothstep(.075,.125,moonDistance);
-           float phase=starTime*6.2831853/30.0;
+           float phase=6.2831853*smoothstep(4.0/30.0,26.0/30.0,fract(starTime/30.0));
            vec2 moonPoint=(sky-vec2(.68,.88))/.1;
            float moonNormal=sqrt(max(0.0,1.0-dot(moonPoint,moonPoint)));
            float lit=smoothstep(-.07,.07,moonPoint.x*sin(phase)+moonNormal*cos(phase));
@@ -625,17 +625,22 @@ const themeFloorMaterial=new THREE.ShaderMaterial({uniforms:{mode:lightingMode,s
  vec3 night=mix(vec3(.015,.025,.085),vec3(.045,.075,.18),depth);
  vec2 cell=floor(floorWorld.xz*1.25),local=fract(floorWorld.xz*1.25);
  vec2 point=vec2(hash(cell),hash(cell+32.1))*.7+.15;
- float star=(1.0-smoothstep(.007,.024,length(local-point)))*step(.81,hash(cell+61.7));
- night+=vec3(.6,.75,1.0)*star;
+ float seed=hash(cell+61.7),starDistance=length(local-point);
+ float aa=max(length(fwidth(floorWorld.xz*1.25))*.5,.003);
+ float star=(1.0-smoothstep(.007,.024+aa,starDistance))*step(.81,seed);
+ float starHalo=exp(-starDistance*starDistance/.003)*step(.81,seed);
+ float flicker=.5+.5*sin(starTime*(.65+seed*1.7)+seed*73.0+sin(starTime*.37+seed*29.0)*2.0);
+ float sparkle=.35+2.4*pow(flicker,3.0+seed*5.0);
+ night+=vec3(.7,.85,1.0)*(star*1.9+starHalo*.55)*sparkle;
  vec2 moonPoint=(floorWorld.xz-vec2(-3.5,-6.0))/.525;
  float moonDistance=length(moonPoint);
- float phase=starTime*6.2831853/30.0;
+ float phase=6.2831853*smoothstep(4.0/30.0,26.0/30.0,fract(starTime/30.0));
  float moonNormal=sqrt(max(0.0,1.0-dot(moonPoint,moonPoint)));
  float lit=smoothstep(-.07,.07,moonPoint.x*sin(phase)+moonNormal*cos(phase));
  float lunarGlow=.9+.1*sin(starTime*1.1+sin(starTime*.43));
  float moon=(1.0-smoothstep(.95,1.05,moonDistance))*lit;
- float halo=exp(-moonDistance*moonDistance/1.8)*(.5+.5*cos(phase))*.12;
- night+=vec3(.65,.78,1.0)*(moon+halo)*lunarGlow;
+ float halo=exp(-moonDistance*moonDistance/1.8)*(.5+.5*cos(phase))*.28;
+ night+=vec3(.65,.78,1.0)*(moon*1.4+halo)*lunarGlow;
  vec3 color=mode>1.5?night:sunset;gl_FragColor=vec4(color,1.0);
  #include <tonemapping_fragment>
  #include <colorspace_fragment>
