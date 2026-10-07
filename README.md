@@ -248,3 +248,6 @@ GitHub Pages는 main 루트에서 자동 배포합니다. 수정 시 index.html�
 - Wikimedia 원본을 미리 불러오고, 하악질은 가장 강한 숨소리 구간을 짧게 재생합니다. 음량을 정규화하고 이전 재생의 중첩을 제한합니다.
 - 탄산 음소거는 출력 연결과 오디오 컨텍스트를 종료합니다. 대기 중인 resume 작업의 재시작도 차단합니다.
 - 녹음 버퍼 재생·단계 전환·음소거 재시작 방지 검사를 통과했습니다.
+
+## Sound tuning 41
+Paw audio peak reduced from 0.65 to 0.04 to balance fizz. Hiss starts 0.18 seconds later with a 0.97 second maximum clip. Consecutive presses: normal twice, 0.9x twice, 0.7x twice, then hiss; a 2.5 second pause resets the sequence. Playback/rate/trim regression checks pass.

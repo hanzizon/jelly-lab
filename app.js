@@ -1,9 +1,9 @@
-import {nextCatMood,catVoice,preloadCatVoice,loadCatVoice} from "./cat-voice.js?v=cat-recordings-40";
-import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=cat-recordings-40";
+import {nextCatMood,catVoice,preloadCatVoice,loadCatVoice} from "./cat-voice.js?v=cat-volume-41";
+import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=cat-volume-41";
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=cat-recordings-40";
-import { shapeMapper, pawPad } from "./shapes.js?v=cat-recordings-40";
+import { Jelly } from "./physics.js?v=cat-volume-41";
+import { shapeMapper, pawPad } from "./shapes.js?v=cat-volume-41";
 
 const canvas = document.querySelector("#scene");
 
@@ -708,3 +708,4 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)silencePaw(
 shapeSelect.addEventListener('change',silencePaw);ui.reset.addEventListener('click',silencePaw);
 
 shapeSelect.addEventListener("change",()=>{if(shapeSelect.value==="paw")preloadCatVoice().catch(()=>{});});
+
