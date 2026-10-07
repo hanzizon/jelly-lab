@@ -1,9 +1,9 @@
-import {nextCatMood,catVoice} from "./cat-voice.js?v=paw-meow-38";
-import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=paw-meow-38";
+import {nextCatMood,catVoice,preloadCatVoice,loadCatVoice} from "./cat-voice.js?v=cat-recordings-40";
+import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=cat-recordings-40";
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=paw-meow-38";
-import { shapeMapper, pawPad } from "./shapes.js?v=paw-meow-38";
+import { Jelly } from "./physics.js?v=cat-recordings-40";
+import { shapeMapper, pawPad } from "./shapes.js?v=cat-recordings-40";
 
 const canvas = document.querySelector("#scene");
 
@@ -597,7 +597,11 @@ panelToggle.addEventListener('click',()=>{
 });
 // Locally synthesized fizz: no downloads, microphone or background playback.
 const soundToggle=document.getElementById('bubbleSound');let fizzContext,fizzGain,fizzTimer;
-function stopFizz(){clearInterval(fizzTimer);fizzTimer=null;if(fizzContext){fizzGain.gain.cancelScheduledValues(fizzContext.currentTime);fizzGain.gain.setValueAtTime(0,fizzContext.currentTime);fizzContext.suspend();}}
+function stopFizz(){
+ clearInterval(fizzTimer);fizzTimer=null;
+ const context=fizzContext,gain=fizzGain;fizzContext=null;fizzGain=null;
+ if(context){gain.gain.cancelScheduledValues(context.currentTime);gain.gain.setValueAtTime(0,context.currentTime);gain.disconnect();context.close().catch(()=>{});}
+}
 async function syncFizz(){
  if(!bubbleToggle.checked||!soundToggle.checked||document.hidden){stopFizz();return;}
  try{
@@ -609,12 +613,15 @@ async function syncFizz(){
  const source=fizzContext.createBufferSource();source.buffer=buffer;source.loop=true;
  const filter=fizzContext.createBiquadFilter();filter.type='highpass';filter.frequency.value=2800;source.connect(filter);filter.connect(fizzGain);source.start();
  }
- await fizzContext.resume();if(fizzTimer)return;
- fizzTimer=setInterval(()=>{if(fizzContext.state!=='running')return;const now=fizzContext.currentTime,osc=fizzContext.createOscillator(),gain=fizzContext.createGain();
+ const context=fizzContext;await context.resume();
+ if(context!==fizzContext)return;
+ if(!bubbleToggle.checked||!soundToggle.checked||document.hidden){stopFizz();return;}
+ if(fizzTimer)return;
+ fizzTimer=setInterval(()=>{if(!bubbleToggle.checked||!soundToggle.checked||document.hidden){stopFizz();return;}if(!fizzContext||fizzContext.state!=='running')return;const now=fizzContext.currentTime,osc=fizzContext.createOscillator(),gain=fizzContext.createGain();
  osc.frequency.setValueAtTime(900+Math.random()*2100,now);osc.frequency.exponentialRampToValueAtTime(450,now+.035);
  gain.gain.setValueAtTime(.001,now);gain.gain.linearRampToValueAtTime(.12+Math.random()*.15,now+.003);gain.gain.exponentialRampToValueAtTime(.001,now+.045);
  osc.connect(gain);gain.connect(fizzGain);osc.start(now);osc.stop(now+.05);osc.onended=()=>{osc.disconnect();gain.disconnect();};},95);
- }catch{soundToggle.checked=false;stopFizz();}
+ }catch{if(!bubbleToggle.checked||!soundToggle.checked||document.hidden)stopFizz();}
 }
 bubbleToggle.addEventListener('change',syncFizz);soundToggle.addEventListener('change',syncFizz);document.addEventListener('visibilitychange',syncFizz);window.addEventListener('pagehide',stopFizz);
 
@@ -683,17 +690,21 @@ for(const element of [shapeSelect,colorInput,rainbowColor,document.getElementByI
 applyLightingMood();
 
 // Each pad press escalates the voice; a pause restores the gentle meow.
-let pawAudio,stopPawVoice;const pawMood={count:0,last:-Infinity};
+let pawAudio,stopPawVoice,pawRequest=0;const pawMood={count:0,last:-Infinity};
 async function playPawMeow(){
  if(!document.getElementById('pawSound').checked||document.hidden)return;
- const mood=nextCatMood(pawMood,performance.now()/1000);
+ const request=++pawRequest;const mood=nextCatMood(pawMood,performance.now()/1000);
  try{
   const Engine=window.AudioContext||window.webkitAudioContext;if(!Engine)return;
   if(!pawAudio)pawAudio=new Engine();await pawAudio.resume();
-  stopPawVoice?.();stopPawVoice=catVoice(pawAudio,mood);
+  const buffers=await loadCatVoice(pawAudio);
+  if(request!==pawRequest||!document.getElementById("pawSound").checked||document.hidden||shapeSelect.value!=="paw")return;
+  stopPawVoice?.();stopPawVoice=catVoice(pawAudio,mood,buffers);
  }catch{}
 }
-function silencePaw(){stopPawVoice?.();stopPawVoice=null;pawMood.count=0;pawMood.last=-Infinity;}
+function silencePaw(){pawRequest++;stopPawVoice?.();stopPawVoice=null;pawMood.count=0;pawMood.last=-Infinity;}
 document.getElementById('pawSound').addEventListener('change',()=>{if(!document.getElementById('pawSound').checked)silencePaw();});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)silencePaw();});
 shapeSelect.addEventListener('change',silencePaw);ui.reset.addEventListener('click',silencePaw);
+
+shapeSelect.addEventListener("change",()=>{if(shapeSelect.value==="paw")preloadCatVoice().catch(()=>{});});

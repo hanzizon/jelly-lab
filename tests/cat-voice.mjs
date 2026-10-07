@@ -1,6 +1,5 @@
-import assert from 'node:assert/strict';import {nextCatMood,catVoice} from '../cat-voice.js';
+import assert from 'node:assert/strict';import {nextCatMood,catVoice,hissStart} from '../cat-voice.js';
 const state={count:0,last:-Infinity};assert.deepEqual([0,.2,.4,.6,.8,1].map(t=>nextCatMood(state,t)),['meow','meow','annoyed','annoyed','annoyed','hiss']);assert.equal(nextCatMood(state,4),'meow');
-const calls=[];const param={value:0,setValueAtTime(v){assert(Number.isFinite(v))},exponentialRampToValueAtTime(v){assert(v>0)},cancelScheduledValues(){},setTargetAtTime(){}};
-const node=()=>({frequency:param,Q:{value:0},gain:param,connect(){},disconnect(){},start(){calls.push('start')},stop(){calls.push('stop')}});
-const ctx={currentTime:0,sampleRate:48000,destination:{},createGain:node,createBiquadFilter:node,createOscillator:node,createBufferSource:node,createBuffer:(c,n)=>({getChannelData:()=>new Float32Array(n)})};
-for(const mood of ['meow','annoyed','hiss'])catVoice(ctx,mood)();assert.equal(calls.filter(x=>x==='start').length,3);console.log('PASS gentle/annoyed/hiss progression, pause reset and finite bounded voices');
+const data=new Float32Array(48000*3);for(let i=48000;i<96000;i++)data[i]=i%2?.5:-.5;const buffer={sampleRate:48000,numberOfChannels:1,duration:3,getChannelData:()=>data};assert(hissStart(buffer)>.8&&hissStart(buffer)<1.2);
+const starts=[];const param={value:1,setValueAtTime(){},linearRampToValueAtTime(){},cancelScheduledValues(){},setTargetAtTime(){}};const ctx={currentTime:0,destination:{},createGain:()=>({gain:param,connect(){},disconnect(){}}),createBufferSource:()=>({playbackRate:{value:1},connect(){},disconnect(){},start(...a){starts.push(a)},stop(){}})};
+for(const mood of ['meow','annoyed','hiss'])catVoice(ctx,mood,{meow:buffer,hiss:buffer})();assert.equal(starts.length,3);assert(starts[2][2]<=1.15);console.log('PASS recorded-buffer playback, selected hiss burst, stages and pause reset');
