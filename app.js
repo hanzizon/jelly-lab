@@ -1,8 +1,8 @@
-import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=bubble-carry-35";
+import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=paw-pink-36";
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=bubble-carry-35";
-import { shapeMapper, pawPad } from "./shapes.js?v=bubble-carry-35";
+import { Jelly } from "./physics.js?v=paw-pink-36";
+import { shapeMapper, pawPad } from "./shapes.js?v=paw-pink-36";
 
 const canvas = document.querySelector("#scene");
 
@@ -278,7 +278,9 @@ jellyMaterial.onBeforeCompile=shader=>{
   shader.fragmentShader='uniform float pawMode; varying float padMask;\nuniform float starTime;\nuniform float lightingMode;\nuniform vec3 reflectionColor;\nuniform float hologram;\nuniform float windowBrightness;\nuniform float jellyOpacity;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
   shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
     `if(pawMode>0.5){
-       vec3 pawColor=mix(vec3(.008,.010,.015),vec3(.95,.18,.38),padMask);
+       float padAA=max(fwidth(padMask),.0001);
+       float padColorMask=smoothstep(.5-padAA,.5+padAA,padMask);
+       vec3 pawColor=mix(vec3(.008,.010,.015),vec3(1.0,.52,.65),padColorMask);
        outgoingLight=pawColor*(.65+.35*abs(dot(normal,normalize(vViewPosition))))+outgoingLight*.07;
      }
      // Add only the bright window panes. Changing their strength must not

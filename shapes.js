@@ -81,7 +81,7 @@ function features(x,z,kind){
   return {hair,face,eyes,pupils,mouth,stitches,ears,feet,clothes,seam,mic,stem};
 }
 function relief(x,z,kind){
-  if(kind==='paw')return .24*pawPad(x,z);
+  if(kind==='paw')return .14*pawPad(x,z);
   const f=features(x,z,kind);
   // Rounded tier changes replace narrow, steep ridges that glittered when moving.
   let h=.20*f.face*(1-f.hair)+.30*f.hair+.08*f.ears;
