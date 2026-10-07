@@ -1,11 +1,12 @@
+import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=bubble-carry-35";
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=paw-34";
-import { shapeMapper, pawPad } from "./shapes.js?v=paw-34";
+import { Jelly } from "./physics.js?v=bubble-carry-35";
+import { shapeMapper, pawPad } from "./shapes.js?v=bubble-carry-35";
 
 const canvas = document.querySelector("#scene");
 
-const ui = Object.fromEntries(["mass", "firmness", "brightness", "zoom", "viewAngle", "opacity", "photoScale", "massValue", "firmnessValue", "brightnessValue", "zoomValue", "viewAngleValue", "opacityValue", "photoScaleValue", "nudge", "reset", "autorotate", "shadowToggle"].map(id => [id, document.getElementById(id)]));
+const ui = Object.fromEntries(["mass", "firmness", "brightness", "zoom", "viewAngle", "opacity", "photoScale", "massValue", "firmnessValue", "brightnessValue", "zoomValue", "viewAngleValue", "opacityValue", "photoScaleValue", "nudge", "reset"].map(id => [id, document.getElementById(id)]));
 const defaults = { mass: 1.25, firmness: 0.2, brightness: 1.5, zoom: 1, viewAngle:45, opacity:60, photoScale:100 };
 const settings = { ...defaults, damping: .95 };
 function syncOutputs() {
@@ -419,6 +420,7 @@ function updateBubbles(dt){
   let b=bubbleStates[i];
   if(!b)b=bubbleStates[i]={x:middle.x+(Math.random()-.5)*size.x*.86,z:middle.z+(Math.random()-.5)*size.z*.86,y:null,seed:Math.random()*20,r:.016+Math.random()*.014,age:0,seeded:bubbleStates.length>=18,popAge:0};
   b.age+=dt;
+  if(b.binding&&b.y!==null){const delta=bubbleDisplacement(b.binding,body.renderP||body.p);b.x+=delta[0];b.y+=delta[1];b.z+=delta[2];}
   const x=b.x+Math.sin(b.age*2.2+b.seed)*.014,z=b.z+Math.cos(b.age*1.8+b.seed)*.014;
   const intersections=[];
   for(const {xs,zs,ys,determinant} of bins[gz(z)*16+gx(x)]){
@@ -442,6 +444,7 @@ function updateBubbles(dt){
     if(fade>=1)bubbleStates[i]=null;
    }
    else if(b.y<low){radius=0;bubbleStates[i]=null;}
+   b.binding=bindBubble([b.x,Math.min(b.y,high),b.z],body.renderP||body.p,body.tets,b.binding);
    bubbleTransform.position.set(x,Math.min(b.y,high),z);
   }else bubbleStates[i]=null;
   bubbleTransform.quaternion.copy(camera.quaternion);bubbleTransform.scale.setScalar(radius);bubbleTransform.updateMatrix();bubbleMesh.setMatrixAt(i,bubbleTransform.matrix);
@@ -517,7 +520,7 @@ function updateViewControls(){
 updateViewControls();
 for(const name of Object.keys(defaults))ui[name].addEventListener('input',()=>{syncOutputs();updateViewControls();});
 ui.nudge.addEventListener('click',()=>{release();body.nudge(settings.mass);exciteFizz(.8);});
-ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of Object.keys(defaults))ui[name].value=defaults[name];syncOutputs();updateViewControls();ui.autorotate.checked=true;ui.shadowToggle.checked=true;});
+ui.reset.addEventListener('click',()=>{release();body.reset();for(const name of Object.keys(defaults))ui[name].value=defaults[name];syncOutputs();updateViewControls();});
 const renderPoint=[0,0,0];
 let last=performance.now(),qualityFrames=0,qualityTime=0;
 function animate(now){
@@ -565,8 +568,7 @@ function animate(now){
   if(photoFloor.visible){photoFloor.position.x=center.x;photoFloor.position.z=center.z;}
   updateBubbles(dt);
   ground.position.x=center.x;ground.position.z=center.z;
-  ground.material.opacity=1/(1+Math.max(0,center.y+.97)*.65);ground.visible=ui.shadowToggle.checked;
-  if(ui.autorotate.checked&&!body.grab){for(let i=0;i<body.p.length;i++){const p=body.p[i],a=dt*.025,x=p[0]-center.x,z=p[2]-center.z;p[0]=center.x+x*Math.cos(a)+z*Math.sin(a);p[2]=center.z+z*Math.cos(a)-x*Math.sin(a);}}
+  ground.material.opacity=1/(1+Math.max(0,center.y+.97)*.65);ground.visible=true;
   {
     jellyMesh.visible=false;rearMesh.visible=true;
     renderer.setRenderTarget(rearTarget);renderer.render(scene,camera);

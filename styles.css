@@ -319,3 +319,5 @@ button:disabled {opacity:.45;cursor:default;transform:none;}
 .color-actions{display:flex;justify-content:flex-end;gap:7px;margin:0 0 18px}.color-actions button{padding:6px 10px;font-size:.75rem}#rainbowColor{background:linear-gradient(110deg,#ffd8f2,#ddd8ff,#c4f5f0,#fff0bd);color:#30405a;border:1px solid #d3dbea}#rainbowColor[aria-pressed="true"]{outline:2px solid #7487c6;outline-offset:2px}
 
 .lighting-row{border-top:1px solid var(--panel-border);padding-top:18px;margin-top:18px}body[data-lighting="sunset"]{background:#b94e48}body[data-lighting="night"]{background:#080f2b}
+
+.scene-settings{margin-top:18px;border-top:1px solid var(--panel-border);padding-top:14px}.scene-settings>summary{cursor:pointer;font-size:.85rem;color:var(--text);padding:6px 0;list-style:none;display:flex;justify-content:space-between}.scene-settings>summary::after{content:"＋"}.scene-settings[open]>summary::after{content:"−"}.scene-settings>summary:focus-visible{outline:2px solid #7487c6;outline-offset:4px}.scene-settings .view-controls{border-top:0;padding-top:8px;margin-top:8px}

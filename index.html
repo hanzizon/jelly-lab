@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Cormorant+Garamond:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=paw-34" />
+    <link rel="stylesheet" href="./styles.css?v=bubble-carry-35" />
   </head>
   <body>
     <div class="page-shell">
@@ -57,10 +57,7 @@
             <button id="reset" type="button" class="secondary">초기화</button>
           </div>
 
-          <div class="checkbox-row">
-            <label><input id="autorotate" type="checkbox" checked /> 느린 회전</label>
-            <label><input id="shadowToggle" type="checkbox" checked /> 그림자</label>
-          </div>
+          <details class="scene-settings"><summary>화면 · 배경 설정</summary>
           <section class="view-controls" aria-label="화면 보기">
             <p class="eyebrow">화면 보기</p>
             <label class="control-row"><span>확대</span><input id="zoom" type="range" min="0.75" max="1.8" step="0.05" value="1" /><output id="zoomValue">1.00</output></label>
@@ -74,11 +71,12 @@
             <label class="control-row photo-scale"><span>사진 크기</span><input id="photoScale" type="range" min="25" max="200" step="5" value="100" /><output id="photoScaleValue">100%</output></label>
             <p id="backgroundStatus" role="status" aria-live="polite">사진을 선택하면 원근감이 자동으로 적용됩니다.</p>
           </div>
+          </details>
         </div>
       </aside>
     </div>
 
     <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.167.1/build/three.module.js"}}</script>
-    <script type="module" src="./app.js?v=paw-34"></script>
+    <script type="module" src="./app.js?v=bubble-carry-35"></script>
   </body>
 </html>
