@@ -321,3 +321,5 @@ button:disabled {opacity:.45;cursor:default;transform:none;}
 .lighting-row{border-top:1px solid var(--panel-border);padding-top:18px;margin-top:18px}body[data-lighting="sunset"]{background:#b94e48}body[data-lighting="night"]{background:#080f2b}
 
 .scene-settings{margin-top:18px;border-top:1px solid var(--panel-border);padding-top:14px}.scene-settings>summary{cursor:pointer;font-size:.85rem;color:var(--text);padding:6px 0;list-style:none;display:flex;justify-content:space-between}.scene-settings>summary::after{content:"＋"}.scene-settings[open]>summary::after{content:"−"}.scene-settings>summary:focus-visible{outline:2px solid #7487c6;outline-offset:4px}.scene-settings .view-controls{border-top:0;padding-top:8px;margin-top:8px}
+
+.sound-option[hidden]{display:none}

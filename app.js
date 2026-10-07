@@ -1,8 +1,8 @@
-import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=paw-pink-36";
+import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=paw-boing-37";
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=paw-pink-36";
-import { shapeMapper, pawPad } from "./shapes.js?v=paw-pink-36";
+import { Jelly } from "./physics.js?v=paw-boing-37";
+import { shapeMapper, pawPad } from "./shapes.js?v=paw-boing-37";
 
 const canvas = document.querySelector("#scene");
 
@@ -281,7 +281,7 @@ jellyMaterial.onBeforeCompile=shader=>{
        float padAA=max(fwidth(padMask),.0001);
        float padColorMask=smoothstep(.5-padAA,.5+padAA,padMask);
        vec3 pawColor=mix(vec3(.008,.010,.015),vec3(1.0,.52,.65),padColorMask);
-       outgoingLight=pawColor*(.65+.35*abs(dot(normal,normalize(vViewPosition))))+outgoingLight*.07;
+       outgoingLight=pawColor*(.65+.35*abs(dot(normal,normalize(vViewPosition))));
      }
      // Add only the bright window panes. Changing their strength must not
      // increase clearcoat energy loss or deepen the transmitted rear surface.
@@ -346,7 +346,7 @@ jellyMaterial.onBeforeCompile=shader=>{
      #include <opaque_fragment>
      float edgeGlow=pow(1.0-abs(dot(normal,normalize(vViewPosition))),2.0);
      gl_FragColor.a = mix(jellyOpacity,max(jellyOpacity,0.62),edgeGlow);
-     if(pawMode>0.5)gl_FragColor.a=max(gl_FragColor.a,.92);`);
+     if(pawMode>0.5)gl_FragColor.a=1.0;`);
 };
 jellyMaterial.customProgramCacheKey=()=> 'jelly-window-highlight-v4';
 const jellyMesh=new THREE.Mesh(jellyGeometry,jellyMaterial);jellyGroup.add(jellyMesh);
@@ -356,6 +356,8 @@ let customColor=null;
 function updateAppearance(kind,mapper){
   const isCharacter=kind==='vocal'||kind==='dj'||kind==='paw';
   pawMode.value=kind==='paw'?1:0;
+  jellyMaterial.depthWrite=kind==='paw';
+  document.getElementById('pawSoundOption').hidden=kind!=='paw';
   for(let i=0;i<vertexCount;i++){const p=mapper(points[i].toArray());pawMask.setX(i,kind==='paw'&&points[i].y>.1?pawPad(p[0]/1.32,p[2]/1.32):0);}
   pawMask.needsUpdate=true;
   const base=new THREE.Color(customColor||(isCharacter?characterColors[kind]:0x2f6bff)),white=new THREE.Color(0xffffff);
@@ -478,6 +480,7 @@ canvas.addEventListener('pointerdown', event => {
   capturedIndex=index; body.pin(skins[index],captured.toArray());
   activePointer=event.pointerId; canvas.setPointerCapture(activePointer);
   canvas.style.cursor='grabbing';exciteFizz(.8);
+  if(shapeSelect.value==='paw'&&pawMask.getX(index)>.5)playPawBoing();
 });
 canvas.addEventListener('pointermove', event => {
   if(event.pointerId !== activePointer)return;
@@ -677,3 +680,20 @@ for(const element of [shapeSelect,colorInput,rainbowColor,document.getElementByI
 
 
 applyLightingMood();
+
+// A short, damped spring tone, triggered only by pressing a pink pad.
+let pawAudio;
+async function playPawBoing(){
+ if(!document.getElementById('pawSound').checked||document.hidden)return;
+ try{
+  const Engine=window.AudioContext||window.webkitAudioContext;if(!Engine)return;
+  if(!pawAudio)pawAudio=new Engine();await pawAudio.resume();
+  const now=pawAudio.currentTime,osc=pawAudio.createOscillator(),gain=pawAudio.createGain();
+  osc.type='sine';const pitch=185+Math.random()*25;
+  for(let i=0;i<=45;i++){const t=i/100;osc.frequency.setValueAtTime(pitch+110*Math.exp(-t*8)*Math.cos(t*48),now+t);}
+  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.16,now+.008);gain.gain.exponentialRampToValueAtTime(.0001,now+.45);
+  osc.connect(gain);gain.connect(pawAudio.destination);osc.start(now);osc.stop(now+.46);osc.onended=()=>{osc.disconnect();gain.disconnect();};
+ }catch{}
+}
+document.getElementById('pawSound').addEventListener('change',()=>{if(!document.getElementById('pawSound').checked)pawAudio?.suspend();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)pawAudio?.suspend();});
