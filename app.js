@@ -1,8 +1,9 @@
-import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=paw-boing-37";
+import {nextCatMood,catVoice} from "./cat-voice.js?v=paw-meow-38";
+import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=paw-meow-38";
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=paw-boing-37";
-import { shapeMapper, pawPad } from "./shapes.js?v=paw-boing-37";
+import { Jelly } from "./physics.js?v=paw-meow-38";
+import { shapeMapper, pawPad } from "./shapes.js?v=paw-meow-38";
 
 const canvas = document.querySelector("#scene");
 
@@ -346,7 +347,7 @@ jellyMaterial.onBeforeCompile=shader=>{
      #include <opaque_fragment>
      float edgeGlow=pow(1.0-abs(dot(normal,normalize(vViewPosition))),2.0);
      gl_FragColor.a = mix(jellyOpacity,max(jellyOpacity,0.62),edgeGlow);
-     if(pawMode>0.5)gl_FragColor.a=1.0;`);
+     if(pawMode>0.5)gl_FragColor.a=mix(jellyOpacity,max(jellyOpacity,.62),edgeGlow);`);
 };
 jellyMaterial.customProgramCacheKey=()=> 'jelly-window-highlight-v4';
 const jellyMesh=new THREE.Mesh(jellyGeometry,jellyMaterial);jellyGroup.add(jellyMesh);
@@ -480,7 +481,7 @@ canvas.addEventListener('pointerdown', event => {
   capturedIndex=index; body.pin(skins[index],captured.toArray());
   activePointer=event.pointerId; canvas.setPointerCapture(activePointer);
   canvas.style.cursor='grabbing';exciteFizz(.8);
-  if(shapeSelect.value==='paw'&&pawMask.getX(index)>.5)playPawBoing();
+  if(shapeSelect.value==='paw'&&pawMask.getX(index)>.5)playPawMeow();
 });
 canvas.addEventListener('pointermove', event => {
   if(event.pointerId !== activePointer)return;
@@ -681,19 +682,18 @@ for(const element of [shapeSelect,colorInput,rainbowColor,document.getElementByI
 
 applyLightingMood();
 
-// A short, damped spring tone, triggered only by pressing a pink pad.
-let pawAudio;
-async function playPawBoing(){
+// Each pad press escalates the voice; a pause restores the gentle meow.
+let pawAudio,stopPawVoice;const pawMood={count:0,last:-Infinity};
+async function playPawMeow(){
  if(!document.getElementById('pawSound').checked||document.hidden)return;
+ const mood=nextCatMood(pawMood,performance.now()/1000);
  try{
   const Engine=window.AudioContext||window.webkitAudioContext;if(!Engine)return;
   if(!pawAudio)pawAudio=new Engine();await pawAudio.resume();
-  const now=pawAudio.currentTime,osc=pawAudio.createOscillator(),gain=pawAudio.createGain();
-  osc.type='sine';const pitch=185+Math.random()*25;
-  for(let i=0;i<=45;i++){const t=i/100;osc.frequency.setValueAtTime(pitch+110*Math.exp(-t*8)*Math.cos(t*48),now+t);}
-  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.16,now+.008);gain.gain.exponentialRampToValueAtTime(.0001,now+.45);
-  osc.connect(gain);gain.connect(pawAudio.destination);osc.start(now);osc.stop(now+.46);osc.onended=()=>{osc.disconnect();gain.disconnect();};
+  stopPawVoice?.();stopPawVoice=catVoice(pawAudio,mood);
  }catch{}
 }
-document.getElementById('pawSound').addEventListener('change',()=>{if(!document.getElementById('pawSound').checked)pawAudio?.suspend();});
-document.addEventListener('visibilitychange',()=>{if(document.hidden)pawAudio?.suspend();});
+function silencePaw(){stopPawVoice?.();stopPawVoice=null;pawMood.count=0;pawMood.last=-Infinity;}
+document.getElementById('pawSound').addEventListener('change',()=>{if(!document.getElementById('pawSound').checked)silencePaw();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)silencePaw();});
+shapeSelect.addEventListener('change',silencePaw);ui.reset.addEventListener('click',silencePaw);
