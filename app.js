@@ -1,9 +1,9 @@
-import {nextCatMood,catVoice,preloadCatVoice,loadCatVoice} from "./cat-voice.js?v=cat-volume-41";
-import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=cat-volume-41";
+import {nextCatMood,catVoice,preloadCatVoice,loadCatVoice} from "./cat-voice.js?v=two-finger-42";
+import {bindBubble,bubbleDisplacement} from "./bubble-motion.js?v=two-finger-42";
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=cat-volume-41";
-import { shapeMapper, pawPad } from "./shapes.js?v=cat-volume-41";
+import { Jelly } from "./physics.js?v=two-finger-42";
+import { shapeMapper, pawPad } from "./shapes.js?v=two-finger-42";
 
 const canvas = document.querySelector("#scene");
 
@@ -459,9 +459,8 @@ function updateBubbles(dt){
 }
 jellyGroup.position.set(0,0,0);
 const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
-const plane = new THREE.Plane(), hitPoint = new THREE.Vector3();
-let activePointer = null, accumulator = 0, capturedIndex = -1;
-const dragOffset = new THREE.Vector3();
+const hitPoint = new THREE.Vector3(), activePointers=new Map();
+let accumulator = 0;
 function pointerRay(event) {
   const rect = canvas.getBoundingClientRect();
   pointer.set((event.clientX-rect.left)/rect.width*2-1,1-(event.clientY-rect.top)/rect.height*2);
@@ -469,48 +468,52 @@ function pointerRay(event) {
 }
 canvas.addEventListener('pointerdown', event => {
   if(event.pointerType==='mouse'&&event.button!==0)return;
-  if(activePointer !== null) return;
+  if(activePointers.has(event.pointerId)||activePointers.size>=2) return;
   pointerRay(event);
   const hit = raycaster.intersectObject(jellyMesh)[0];
   if(!hit) return;
   const face = hit.face, ids=[face.a,face.b,face.c];
   const index=ids.reduce((a,b)=>new THREE.Vector3().fromBufferAttribute(positionAttr,a).distanceToSquared(hit.point)<new THREE.Vector3().fromBufferAttribute(positionAttr,b).distanceToSquared(hit.point)?a:b);
   const captured=new THREE.Vector3().fromBufferAttribute(positionAttr,index);
+  const plane=new THREE.Plane(),dragOffset=new THREE.Vector3();
   plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()),hit.point);
   dragOffset.copy(captured).sub(hit.point);
-  capturedIndex=index; body.pin(skins[index],captured.toArray());
-  activePointer=event.pointerId; canvas.setPointerCapture(activePointer);
+  const grab=body.pin(skins[index],captured.toArray(),activePointers.size>0);
+  activePointers.set(event.pointerId,{plane,dragOffset,grab});
+  canvas.setPointerCapture(event.pointerId);
   canvas.style.cursor='grabbing';exciteFizz(.8);
   if(shapeSelect.value==='paw'&&pawMask.getX(index)>.5)playPawMeow();
 });
 canvas.addEventListener('pointermove', event => {
-  if(event.pointerId !== activePointer)return;
+  const held=activePointers.get(event.pointerId);if(!held)return;
+  const {plane,dragOffset,grab}=held;
   // Recover even when the browser missed pointerup while leaving the canvas.
-  if(event.pointerType==='mouse'&&event.buttons===0){release();return;}
+  if(event.pointerType==='mouse'&&event.buttons===0){release(event.pointerId);return;}
   pointerRay(event);
   if(raycaster.ray.intersectPlane(plane,hitPoint)){
     hitPoint.add(dragOffset);
     // Follow the pointer continuously; a world-space ceiling made a stretched
     // jelly stop following the hand. The solver limits strain, not hand position.
-    const travel=hitPoint.distanceTo(new THREE.Vector3(...(body.grab.desired||body.grab.target)));
+    const travel=hitPoint.distanceTo(new THREE.Vector3(...(grab.desired||grab.target)));
     if(travel>.002)exciteFizz(Math.min(1,travel*4));
-    body.grab.desired=hitPoint.toArray();
+    grab.desired=hitPoint.toArray();
   }
 });
-function release(){
-  const pointerId=activePointer;
-  activePointer=null;capturedIndex=-1;body.release();canvas.style.cursor='grab';
-  // Clear state first: releasing capture can synchronously dispatch capture loss.
-  if(pointerId!==null&&canvas.hasPointerCapture(pointerId))canvas.releasePointerCapture(pointerId);
+function release(pointerId=null){
+ const ids=pointerId===null?[...activePointers.keys()]:[pointerId];
+ for(const id of ids){const held=activePointers.get(id);if(!held)continue;
+ activePointers.delete(id);body.release(held.grab);
+ if(canvas.hasPointerCapture(id))canvas.releasePointerCapture(id);}
+ canvas.style.cursor=activePointers.size?'grabbing':'grab';
 }
-function endPointer(event){if(event.pointerId===activePointer)release();}
+function endPointer(event){release(event.pointerId);}
 canvas.addEventListener('pointerup',endPointer);canvas.addEventListener('pointercancel',endPointer);canvas.addEventListener('lostpointercapture',endPointer);
 window.addEventListener('pointerup',endPointer,true);
 window.addEventListener('pointercancel',endPointer,true);
-window.addEventListener('mouseup',()=>{if(activePointer!==null)release();},true);
+window.addEventListener('mouseup',()=>{if(activePointers.size)release();},true);
 window.addEventListener('touchend',event=>{if(event.touches.length===0)release();},{capture:true,passive:true});
-window.addEventListener('touchcancel',release,{capture:true,passive:true});
-window.addEventListener('blur',release);
+window.addEventListener('touchcancel',()=>release(),{capture:true,passive:true});
+window.addEventListener('blur',()=>release());
 document.addEventListener('visibilitychange',()=>{if(document.hidden){release();accumulator=0;last=performance.now();}});
 function updateViewControls(){
   updateCameraPose();
@@ -544,7 +547,7 @@ function animate(now){
   // Consume ordinary frame time in full, including 15–25 fps frames.
   const steps=Math.max(1,Math.ceil(dt/(1/90))), stepDt=dt/steps;
   for(let step=0;step<steps;step++){
-    if(body.grab?.desired)for(let k=0;k<3;k++)body.grab.target[k]+=(body.grab.desired[k]-body.grab.target[k])*(1-Math.exp(-48/(.6+settings.mass)*stepDt));
+    for(const g of body.grabs)if(g.desired)for(let k=0;k<3;k++)g.target[k]+=(g.desired[k]-g.target[k])*(1-Math.exp(-48/(.6+settings.mass)*stepDt));
     body.step(stepDt,settings);
   }
   body.prepareRender();

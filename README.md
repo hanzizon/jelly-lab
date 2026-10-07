@@ -251,3 +251,6 @@ GitHub Pages는 main 루트에서 자동 배포합니다. 수정 시 index.html�
 
 ## Sound tuning 41
 Paw audio peak reduced from 0.65 to 0.04 to balance fizz. Hiss starts 0.18 seconds later with a 0.97 second maximum clip. Consecutive presses: normal twice, 0.9x twice, 0.7x twice, then hiss; a 2.5 second pause resets the sequence. Playback/rate/trim regression checks pass.
+
+## Two-finger stretching 42
+Touch two separate points on the jelly and spread your fingers to stretch it. Each pointer keeps its own anchor and drag plane; releasing one preserves the other. Up to two simultaneous contacts are supported. Cancellation, capture loss, blur and reset clear the corresponding anchors. Two-anchor floor contact preserves safe volume. Automated two-finger physics and pointer lifecycle checks pass on all four shapes; single-grip shake/stretch/down-pull regressions pass. Physical mobile device testing remains outstanding.

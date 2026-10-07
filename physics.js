@@ -2,7 +2,7 @@
 export class Jelly {
   constructor(mapper=null) {
     this.n = 9; this.h = 5; this.floor = -1.55;
-    this.rest = []; this.edges = []; this.tets = []; this.grab = null;
+    this.rest = []; this.edges = []; this.tets = []; this.grabs = [];
     const id = (x,y,z) => (y*this.n+z)*this.n+x;
     for(let y=0;y<this.h;y++) for(let z=0;z<this.n;z++) for(let x=0;x<this.n;x++) {
       const u=x/4-1, v=z/4-1;
@@ -29,7 +29,7 @@ export class Jelly {
     const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2],wx=d[0]-a[0],wy=d[1]-a[1],wz=d[2]-a[2];
     return (ux*(vy*wz-vz*wy)+uy*(vz*wx-vx*wz)+uz*(vx*wy-vy*wx))/6;
   }
-  reset(){this.p=this.rest.map(p=>[p[0],p[1]+this.floor+.59,p[2]]);this.v=this.p.map(()=>[0,0,0]);this.grab=null;this.renderRotation=[1,0,0,0,1,0,0,0,1];this.releaseAge=0;this.renderP=null;}
+  reset(){this.p=this.rest.map(p=>[p[0],p[1]+this.floor+.59,p[2]]);this.v=this.p.map(()=>[0,0,0]);this.grabs=[];this.renderRotation=[1,0,0,0,1,0,0,0,1];this.releaseAge=0;this.renderP=null;}
   skin(point, surfacePoint=point) {
     const x=point[0]/1.64,z=point[2]/1.64;
     const inv=(a,b)=>Math.sign(a)*Math.sqrt(Math.max(0,((2+a*a-b*b)-Math.sqrt(Math.max(0,(2+a*a-b*b)**2-8*a*a)))/2));
@@ -72,7 +72,9 @@ export class Jelly {
       for(let i=0;i<s.smoothIds.length;i++)v+=(this.renderP||this.p)[s.smoothIds[i]][k]*s.smoothWeights[i];out[k]=v;
     }return out;
   }
-  pin(s,target){
+  get grab(){return this.grabs[0]||null;}
+  pin(s,target,additional=false){
+    if(!additional)this.grabs=[];
     // Re-grabbing starts from the visible body, so no hidden strain pops back.
     if(this.renderP&&this.renderP!==this.p)this.p=this.renderP.map(p=>[...p]);
     this.renderP=this.p;this.releaseAge=0;
@@ -82,12 +84,14 @@ export class Jelly {
     const r=this.renderRotation||[1,0,0,0,1,0,0,0,1];
     const offset=[0,1,2].map(k=>s.localOffset.reduce((sum,v,j)=>sum+r[k*3+j]*v,0));
     const onFloor=Math.min(...this.p.map(p=>p[1]))<this.floor+.08;
-    this.grab={...s,ids,weights,offset,target:[...target],minimumY:onFloor?Math.max(this.floor+.025,target[1]-.3):this.floor+.025};
+    const grab={...s,ids,weights,offset,target:[...target],minimumY:onFloor?Math.max(this.floor+.025,target[1]-.3):this.floor+.025};
+    this.grabs.push(grab);
     // Smooth local compliance lets the neck stretch without a hard seam.
     for(const e of this.edges){
-      const d2=this.rest[e.i].reduce((sum,v,k)=>sum+((v+this.rest[e.j][k])*.5-s.surfacePoint[k])**2,0);
+      const d2=Math.min(...this.grabs.map(g=>this.rest[e.i].reduce((sum,v,k)=>sum+((v+this.rest[e.j][k])*.5-g.surfacePoint[k])**2,0)));
       e.pinchCompliance=1+3.35*Math.exp(-d2/1.2);
     }
+    return grab;
   }
   frame(){
     const center=[0,0,0],restCenter=[0,0,0],n=this.p.length;
@@ -121,8 +125,11 @@ export class Jelly {
     for(let i=0;i<81;i++)for(let k=0;k<3;k++)origin[k]+=(this.renderP||this.p)[i][k]/81;
     return {normal,origin};
   }
-  release(){
-    if(!this.grab)return;this.grab=null;this.releaseAge=0;
+  release(grab=null){
+    if(!this.grab)return;
+    this.grabs=grab?this.grabs.filter(g=>g!==grab):[];
+    if(this.grab)return;
+    this.releaseAge=0;
     const cap=3.2/Math.sqrt(.5+(this.mass||1.25));
     for(const v of this.v){const speed=Math.hypot(...v);if(speed>cap)for(let k=0;k<3;k++)v[k]*=cap/speed;}
     const lift=this.v.reduce((sum,v)=>sum+v[1],0)/this.v.length;
@@ -133,10 +140,10 @@ export class Jelly {
     if(!this.grab)this.releaseAge+=dt;
     else {
       // The held point cannot pull matter through the solid floor.
-      this.grab.target[1]=Math.max(this.grab.minimumY,this.grab.target[1]);
+      for(const g of this.grabs)g.target[1]=Math.max(g.minimumY,g.target[1]);
       this.renderRotation=this.frame().rotation;
       const r=this.renderRotation;
-      this.grab.offset=[0,1,2].map(k=>this.grab.localOffset.reduce((sum,v,j)=>sum+r[k*3+j]*v,0));
+      for(const g of this.grabs)g.offset=[0,1,2].map(k=>g.localOffset.reduce((sum,v,j)=>sum+r[k*3+j]*v,0));
     }
     const old=this.p.map(p=>[...p]), mass=settings.mass;this.mass=mass;
     for(let i=0;i<this.p.length;i++)for(let k=0;k<3;k++){
@@ -169,8 +176,8 @@ export class Jelly {
         c[0]+=dl*g2x;c[1]+=dl*g2y;c[2]+=dl*g2z;d[0]+=dl*g3x;d[1]+=dl*g3y;d[2]+=dl*g3z;
       }
       for(const p of this.p)p[1]=Math.max(this.floor,p[1]);
-      if(this.grab){
-        const g=this.grab,here=this.sample(g),den=g.weights.reduce((s,w)=>s+w*w,0);
+      for(const g of this.grabs){
+        const here=this.sample(g),den=g.weights.reduce((s,w)=>s+w*w,0);
         g.ids.forEach((id,i)=>{for(let k=0;k<3;k++)this.p[id][k]+=(g.target[k]-here[k])*g.weights[i]/den;});
       }
     }
@@ -220,11 +227,11 @@ export class Jelly {
       }
       // At the stretch limit carry the body with the pointer rather than
       // detaching the visible pinch. Translation preserves the safe volume.
-      const here=this.sample(this.grab);
-      const shift=this.grab.target.map((v,k)=>v-here[k]);
+      const shift=[0,1,2].map(k=>this.grabs.reduce((sum,g)=>sum+g.target[k]-this.sample(g)[k],0)/this.grabs.length);
       for(const p of this.p)for(let k=0;k<3;k++)p[k]+=shift[k];
-      // Safe-strain translation must obey contact too, especially on a down-pull.
-      for(const p of this.p)p[1]=Math.max(this.floor,p[1]);
+      // With two anchors preserve the repaired volume at floor contact.
+      if(this.grabs.length>1){const lift=Math.max(0,this.floor-Math.min(...this.p.map(p=>p[1])));for(const p of this.p)p[1]+=lift;}
+      else for(const p of this.p)p[1]=Math.max(this.floor,p[1]);
     }
     // Shape recovery is a geometric relaxation, not a fresh physical impulse.
     // Derive velocity before it so rebuilding the resting shape cannot launch it.
