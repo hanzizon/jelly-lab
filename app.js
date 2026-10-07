@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.167.1/build/three.module.js";
 
-import { Jelly } from "./physics.js?v=sky-glow-33";
-import { shapeMapper } from "./shapes.js?v=sky-glow-33";
+import { Jelly } from "./physics.js?v=paw-34";
+import { shapeMapper, pawPad } from "./shapes.js?v=paw-34";
 
 const canvas = document.querySelector("#scene");
 
@@ -263,17 +263,24 @@ jellyMaterial.onBeforeCompile = shader => {
 const compileTransmission=jellyMaterial.onBeforeCompile;
 const windowBrightness={value:1},hologram={value:0};
 const starTime={value:0};
+const pawMode={value:0};
+const pawMask=new THREE.BufferAttribute(new Float32Array(vertexCount),1);jellyGeometry.setAttribute("pawMask",pawMask);
 const lightingMode={value:0},reflectionColor={value:new THREE.Color(1,.98,.94)};
 jellyMaterial.onBeforeCompile=shader=>{
   compileTransmission(shader);
+  shader.uniforms.pawMode=pawMode;
   shader.uniforms.windowBrightness=windowBrightness;
   shader.uniforms.starTime=starTime;shader.uniforms.hologram=hologram;shader.uniforms.lightingMode=lightingMode;shader.uniforms.reflectionColor=reflectionColor;
   shader.uniforms.jellyOpacity=jellyOpacity;
-  shader.vertexShader='varying vec3 jellyWorldPosition;\n'+shader.vertexShader;
-  shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\njellyWorldPosition=(modelMatrix*vec4(transformed,1.0)).xyz;');
-  shader.fragmentShader='uniform float starTime;\nuniform float lightingMode;\nuniform vec3 reflectionColor;\nuniform float hologram;\nuniform float windowBrightness;\nuniform float jellyOpacity;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
+  shader.vertexShader='attribute float pawMask; varying float padMask;\nvarying vec3 jellyWorldPosition;\n'+shader.vertexShader;
+  shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\npadMask=pawMask;\njellyWorldPosition=(modelMatrix*vec4(transformed,1.0)).xyz;');
+  shader.fragmentShader='uniform float pawMode; varying float padMask;\nuniform float starTime;\nuniform float lightingMode;\nuniform vec3 reflectionColor;\nuniform float hologram;\nuniform float windowBrightness;\nuniform float jellyOpacity;\nvarying vec3 jellyWorldPosition;\n'+shader.fragmentShader;
   shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
-    `// Add only the bright window panes. Changing their strength must not
+    `if(pawMode>0.5){
+       vec3 pawColor=mix(vec3(.008,.010,.015),vec3(.95,.18,.38),padMask);
+       outgoingLight=pawColor*(.65+.35*abs(dot(normal,normalize(vViewPosition))))+outgoingLight*.07;
+     }
+     // Add only the bright window panes. Changing their strength must not
      // increase clearcoat energy loss or deepen the transmitted rear surface.
        vec3 windowRay=inverseTransformDirection(reflect(-normalize(vViewPosition),normal),viewMatrix);
        vec3 windowCenter=vec3(-2.5,6.0,-7.0);
@@ -324,7 +331,7 @@ jellyMaterial.onBeforeCompile=shader=>{
      if(lightingMode>1.5){
        float luminousRim=pow(1.0-abs(dot(normal,normalize(vViewPosition))),1.4);
        vec3 luminousColor=mix(attenuationColor,vec3(.22,.65,1.0),.35);
-       outgoingLight+=luminousColor*(.58+luminousRim*1.08);
+       outgoingLight+=luminousColor*(.58+luminousRim*1.08)*(1.0-pawMode*.92);
      }
      if(hologram>0.5){
        float facing=abs(dot(normal,normalize(vViewPosition)));
@@ -335,15 +342,19 @@ jellyMaterial.onBeforeCompile=shader=>{
      }
      #include <opaque_fragment>
      float edgeGlow=pow(1.0-abs(dot(normal,normalize(vViewPosition))),2.0);
-     gl_FragColor.a = mix(jellyOpacity,max(jellyOpacity,0.62),edgeGlow);`);
+     gl_FragColor.a = mix(jellyOpacity,max(jellyOpacity,0.62),edgeGlow);
+     if(pawMode>0.5)gl_FragColor.a=max(gl_FragColor.a,.92);`);
 };
 jellyMaterial.customProgramCacheKey=()=> 'jelly-window-highlight-v4';
 const jellyMesh=new THREE.Mesh(jellyGeometry,jellyMaterial);jellyGroup.add(jellyMesh);
-const characterColors={vocal:0x162ae3,dj:0x3c458f};
+const characterColors={paw:0x101218,vocal:0x162ae3,dj:0x3c458f};
 const colorInput=document.getElementById('jellyColor'),bubbleToggle=document.getElementById('bubbles');
 let customColor=null;
 function updateAppearance(kind,mapper){
-  const isCharacter=kind==='vocal'||kind==='dj';
+  const isCharacter=kind==='vocal'||kind==='dj'||kind==='paw';
+  pawMode.value=kind==='paw'?1:0;
+  for(let i=0;i<vertexCount;i++){const p=mapper(points[i].toArray());pawMask.setX(i,kind==='paw'&&points[i].y>.1?pawPad(p[0]/1.32,p[2]/1.32):0);}
+  pawMask.needsUpdate=true;
   const base=new THREE.Color(customColor||(isCharacter?characterColors[kind]:0x2f6bff)),white=new THREE.Color(0xffffff);
   colorInput.value='#'+base.getHexString();
   transmissionTint.copy(hologram.value?base.clone().lerp(white,.8):base);rearMaterial.color.copy(hologram.value?base.clone().lerp(white,.65):base);

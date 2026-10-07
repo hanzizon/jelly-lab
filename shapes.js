@@ -30,7 +30,18 @@ for(let i=0;i<catOutline.length;i++){
   roundedCatOutline.push([0,1].map(k=>.5*((2*p1[k])+(-p0[k]+p2[k])*t+(2*p0[k]-5*p1[k]+4*p2[k]-p3[k])*t2+(-p0[k]+3*p1[k]-3*p2[k]+p3[k])*t3)));
  }
 }
+
+const pawToes=[[-.68,-.38,.29,.35],[-.26,-.79,.28,.34],[.26,-.79,.28,.34],[.68,-.38,.29,.35]];
+const union=(a,b,k=.18)=>{const h=Math.max(k-Math.abs(a-b),0)/k;return Math.min(a,b)-h*h*k*.25;};
+export function pawPad(x,z){
+ let d=union(ellipse(x,z,-.22,.30,.30,.28),ellipse(x,z,.22,.30,.30,.28),.3);
+ d=union(d,ellipse(x,z,0,.06,.28,.30),.3);
+ for(const [cx,cz,rx,rz] of pawToes)d=Math.min(d,ellipse(x,z,cx,cz,rx*.62,rz*.62));
+ return soft(d,.08);
+}
+
 function silhouette(x,z,kind){
+  if(kind==='paw'){let d=ellipse(x,z,0,.23,.78,.65);for(const [cx,cz,rx,rz] of pawToes)d=union(d,ellipse(x,z,cx,cz,rx,rz),.25);return d;}
   if(kind==='cat')return polygon(x,z,roundedCatOutline);
   let d=ellipse(x,z,0,-.38,.76,.78);
   if(kind==='vocal'){
@@ -70,6 +81,7 @@ function features(x,z,kind){
   return {hair,face,eyes,pupils,mouth,stitches,ears,feet,clothes,seam,mic,stem};
 }
 function relief(x,z,kind){
+  if(kind==='paw')return .24*pawPad(x,z);
   const f=features(x,z,kind);
   // Rounded tier changes replace narrow, steep ridges that glittered when moving.
   let h=.20*f.face*(1-f.hair)+.30*f.hair+.08*f.ears;
